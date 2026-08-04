@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { execSync } = require("child_process");
+const { execSync, exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -180,6 +180,114 @@ app.patch("/api/bugs/:project/:id", (req, res) => {
 
   fs.writeFileSync(bugPath, JSON.stringify(bug, null, 2));
   res.json(bug);
+});
+
+// ========== REÁLNÁ EXEKUCE AGENTŮ ==========
+// Mapování Sovereign agenta → exekuční prompt pro OpenClaw agenta (experimental)
+// Agent má přístup k souborům a gitu → reálně vykoná úkol a zapíše manifest.
+const EXEC_AGENT = process.env.SOVEREIGN_EXEC_AGENT || 'experimental';
+const SOVEREIGN_EXEC_MODEL = process.env.SOVEREIGN_EXEC_MODEL || 'ollama/kimi-k2.7-code:cloud';
+
+const AGENT_TASKS = {
+  scout: {
+    name: "The Scout (The Big Eye)",
+    workspace: "scout",
+    prompt: `Jsi The Scout — The Big Eye Sovereign OS. Tvoje role: vidět peníze a příležitosti tam, kde ostatní vidí jen hromadu dat.
+
+ÚKOL: Najdi 3 nové české firmy (10-200 zaměstnanců) v sektorech účetnictví, právo, logistika nebo e-commerce, které mají repetitivní úkoly vhodné pro AI automatizaci.
+
+POSTUP:
+1. Vyhledej na webu (Seznam Firmy.cz, webové stránky) kvalifikované leady.
+2. Pro každý lead zapiš: jméno, web, sektor, lokace, odhad velikosti, repetitivní úkol, AI value proposition.
+3. Zapiš výsledky do souboru /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/scout/leads-new.json (JSON).
+4. Aktualizuj manifest /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/scout/manifest.json (status, summary, identity).
+
+Nepřidávej nové leady do původního leads.json (zachovej ho). Buď faktický a ověřitelný — neplň si to z hlavy.`,
+  },
+  strategist: {
+    name: "The Strategist (The Big Mouth)",
+    workspace: "strategist",
+    prompt: `Jsi The Strategist — The Big Mouth Sovereign OS. Tvoje role: přeložit komplexitu do statusu a peněz.
+
+ÚKOL: Vytvoř konkrétní pitch pro jednoho z leadů, které našel Scout (ADAR účetnictví, CINK advokacie, Pragotour logistika, DárkyHry nebo Mariveo e-commerce).
+
+POSTUP:
+1. Přečti soubor /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/scout/leads.json (pokud existuje).
+2. Vyber jednoho leada a napiš pitch v Sovereign voice (zero bullshit, autentický český tón, hodnota místo technických detailů).
+3. Zapiš pitch do souboru /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/strategist/pitch-[leada].md
+4. Aktualizuj manifest /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/strategist/manifest.json (status, summary).
+
+Pitch musí být konkrétní pro tu firmu, ne generický. Mluv o jejich skutečném problému.`,
+  },
+  archivist: {
+    name: "The Archivist",
+    workspace: "archivist",
+    prompt: `Jsi The Archivist — Sovereign OS. Tvoje role: dokumentace a audit.
+
+ÚKOL: Proveď rychlý audit jednoho projektu z /Users/petrpiskacek/projects/ — podívej se na jeho README, strukturu a stav. Vyber projekt, který nemá dobrou dokumentaci, a doplň/opiš ji.
+
+POSTUP:
+1. Projdi projekty v /Users/petrpiskacek/projects/ a najdi ten s nejhorší dokumentací.
+2. Auditni ho (co to dělá, jak to běží, architektura).
+3. Vylepši jeho README.md s konkrétními informacemi (bez fluffu).
+4. Aktualizuj manifest /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/archivist/manifest.json (status, summary, filesChanged).
+
+Nezasahuj do cizích workspace agentů. Pracuj jen v tom projektu co audituješ.`,
+  },
+  spine: {
+    name: "The Spine",
+    workspace: "spine",
+    prompt: `Jsi The Spine — Big Spine Sovereign OS. Tvoje role: držet strukturu, hlídat focus, být Merge Master.
+
+ÚKOL: Proveď kontrolu stavu Sovereign OS workspace a zaznamenej ji.
+
+POSTUP:
+1. Projdi /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/ — zkontroluj manifesty všech agentů (status, completed).
+2. Zjisti, který agent má hotovou práci a která čeká.
+3. Zapiš status report do /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/spine/status-report.json (json s přehledem agentů).
+4. Aktualizuj manifest /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/spine/manifest.json (status, lastCheck).
+
+Buď věcný a stručný. Identifikuj, co je hotové a co je blokované.`,
+  },
+};
+
+// Spustí exekuci agenta přes OpenClaw agenta (experimental)
+function runAgentExe(agentName, callback) {
+  const task = AGENT_TASKS[agentName];
+  if (!task) {
+    return callback(new Error(`Neznámý agent: ${agentName}`));
+  }
+
+  const args = ['agent', '--agent', EXEC_AGENT, '--json', '--model', SOVEREIGN_EXEC_MODEL, '-m', task.prompt];
+  exec(`openclaw ${args.map(a => `"${a}"`).join(' ')}`, {
+    timeout: 300000, // 5 min
+    maxBuffer: 10 * 1024 * 1024,
+  }, (err, stdout, stderr) => {
+    if (err) {
+      return callback(new Error(`Exekuce selhala: ${err.message} — ${stderr.slice(0, 300)}`));
+    }
+    try {
+      const data = JSON.parse(stdout);
+      const payloads = data.result?.payloads || [];
+      const text = payloads.map(p => p.text || '').join('\n');
+      const usage = data.result?.meta?.agentMeta?.usage || {};
+      callback(null, { text, tokens: usage.total || usage.input + usage.output || 0, agent: task.name });
+    } catch {
+      callback(null, { text: stdout.slice(0, 1000), tokens: 0, agent: task.name });
+    }
+  });
+}
+
+// Endpoint: spuštění agenta
+app.post('/api/agents/:name/run', (req, res) => {
+  const { name } = req.params;
+  if (!AGENT_TASKS[name]) {
+    return res.status(404).json({ error: `Neznámý agent: ${name}` });
+  }
+  runAgentExe(name, (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ success: true, ...result });
+  });
 });
 
 app.listen(PORT, () => {

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { pipeline as seedPipeline, log as seedLog } from "../data/sovereign-data";
 
+const API = "http://localhost:8891";
+
 const priorityStyles = {
   high: { bg: "rgba(232,93,93,0.15)", color: "#e85d5d", border: "rgba(232,93,93,0.3)" },
   medium: { bg: "rgba(229,179,75,0.15)", color: "#e5b34b", border: "rgba(229,179,75,0.3)" },
@@ -14,18 +16,35 @@ export default function Pipeline() {
 
   const runTask = (id) => {
     if (runningId) return;
+    // Mapování pipeline úkolu → agenta (pouze exekuovatelné agenty)
+    const agentMap = { archivist: "archivist", scout: "scout", strategist: "strategist" };
+    const agent = agentMap[id];
+    if (!agent) {
+      const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
+      setLog((l) => [{ time: ts, tag: "progress", text: `⚠ Úkol "${items.find(i => i.id === id)?.task}" nemá exekučního agenta` }, ...l]);
+      return;
+    }
     setRunningId(id);
     const item = items.find((i) => i.id === id);
     const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
-
-    // Simulace spuštění — pošleme do logu
-    setLog((l) => [{ time: ts, tag: "progress", text: `▶ Spouštím: ${item?.task}` }, ...l]);
-    setTimeout(() => {
-      const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });
-      setLog((l) => [{ time: ts2, tag: "victory", text: `✔ Dokončeno: ${item?.task}` }, ...l]);
-      setItems((prev) => prev.map((p) => (p.id === id ? { ...p, status: "done" } : p)));
-      setRunningId(null);
-    }, 1500);
+    setLog((l) => [{ time: ts, tag: "progress", text: `▶ Spouštím: ${item?.task} (reálná exekuce)` }, ...l]);
+    fetch(`${API}/api/agents/${agent}/run`, { method: "POST" })
+      .then((r) => r.json())
+      .then((data) => {
+        const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });
+        if (data.success) {
+          setLog((l) => [{ time: ts2, tag: "victory", text: `✔ Dokončeno: ${item?.task} (${data.tokens || 0} tok)` }, ...l]);
+          setItems((prev) => prev.map((p) => (p.id === id ? { ...p, status: "done" } : p)));
+        } else {
+          setLog((l) => [{ time: ts2, tag: "struggle", text: `✘ ${item?.task}: ${data.error || "selhání"}` }, ...l]);
+        }
+        setRunningId(null);
+      })
+      .catch((err) => {
+        const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });
+        setLog((l) => [{ time: ts2, tag: "struggle", text: `✘ ${item?.task}: ${err.message}` }, ...l]);
+        setRunningId(null);
+      });
   };
 
   const logEntries = [...log, ...seedLog].slice(0, 8);

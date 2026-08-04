@@ -22,12 +22,29 @@ export default function Agents() {
     if (running[name]) return;
     setRunning((r) => ({ ...r, [name]: true }));
     const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
-    setJobLog((l) => [{ time: ts, agent: name, text: "▶ Job spuštěn — agent pracuje..." }, ...l]);
-    setTimeout(() => {
-      const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });
-      setJobLog((l) => [{ time: ts2, agent: name, text: "✔ Job dokončen — manifest aktualizován" }, ...l]);
-      setRunning((r) => ({ ...r, [name]: false }));
-    }, 2000);
+    setJobLog((l) => [{ time: ts, agent: name, text: "▶ Job spuštěn — agent pracuje (reálná exekuce)..." }, ...l]);
+    fetch(`${API}/api/agents/${encodeURIComponent(name)}/run`, { method: "POST" })
+      .then((r) => r.json())
+      .then((data) => {
+        const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });
+        if (data.success) {
+          setJobLog((l) => [
+            { time: ts2, agent: name, text: `✔ Job dokončen (${data.tokens || 0} tok): ${(data.text || "").slice(0, 120)}` },
+            ...l,
+          ]);
+        } else {
+          setJobLog((l) => [
+            { time: ts2, agent: name, text: `✘ Selhání: ${data.error || "neznámá chyba"}` },
+            ...l,
+          ]);
+        }
+        setRunning((r) => ({ ...r, [name]: false }));
+      })
+      .catch((err) => {
+        const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });
+        setJobLog((l) => [{ time: ts2, agent: name, text: `✘ Chyba: ${err.message}` }, ...l]);
+        setRunning((r) => ({ ...r, [name]: false }));
+      });
   };
 
   if (loading) return <p className="text-[#5c5c5c]">Načítám agenty...</p>;
