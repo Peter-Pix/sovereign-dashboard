@@ -2,15 +2,30 @@ import { useState } from "react";
 import Pulse from "./components/Pulse";
 import Pipeline from "./components/Pipeline";
 import Log from "./components/Log";
+import Agents from "./components/Agents";
+import ProjectDetail from "./components/ProjectDetail";
+import Paparazzi from "./components/Paparazzi";
 
 const tabs = [
   { id: "pulse", label: "Pulse" },
   { id: "pipeline", label: "Pipeline" },
+  { id: "agents", label: "Agenti" },
+  { id: "paparazzi", label: "Paparazzi" },
   { id: "log", label: "Log" },
 ];
 
 function App() {
   const [activeTab, setActiveTab] = useState("pulse");
+  const [selectedProject, setSelectedProject] = useState(null);
+
+  const handleSelectProject = (name) => {
+    setSelectedProject(name);
+    setActiveTab("pulse");
+  };
+
+  const handleBack = () => {
+    setSelectedProject(null);
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#f4f4f4] font-sans flex flex-col">
@@ -37,28 +52,41 @@ function App() {
         </div>
       </header>
 
-      {/* Tabs */}
-      <div className="flex gap-0 px-8 border-b border-[#232323]">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-              activeTab === tab.id
-                ? "text-[#C89B3C] border-[#C89B3C]"
-                : "text-[#5c5c5c] border-transparent hover:text-[#9d9d9d]"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Tabs (skryjeme když je otevřenej detail projektu) */}
+      {!selectedProject && (
+        <div className="flex gap-0 px-8 border-b border-[#232323]">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
+                activeTab === tab.id
+                  ? "text-[#C89B3C] border-[#C89B3C]"
+                  : "text-[#5c5c5c] border-transparent hover:text-[#9d9d9d]"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Content */}
       <main className="flex-1 p-8">
-        {activeTab === "pulse" && <Pulse />}
-        {activeTab === "pipeline" && <Pipeline />}
-        {activeTab === "log" && <Log />}
+        {selectedProject ? (
+          <ProjectDetail
+            projectName={selectedProject}
+            onBack={handleBack}
+          />
+        ) : (
+          <>
+            {activeTab === "pulse" && <Pulse onSelectProject={handleSelectProject} />}
+            {activeTab === "pipeline" && <Pipeline />}
+            {activeTab === "agents" && <Agents />}
+            {activeTab === "paparazzi" && <Paparazzi />}
+            {activeTab === "log" && <Log />}
+          </>
+        )}
       </main>
 
       {/* Footer */}

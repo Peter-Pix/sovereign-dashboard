@@ -17,11 +17,11 @@ const projects = [
 ];
 
 const pipeline = [
-  { task: "Aktivovat Archivistu", desc: "Spustit audit projektů — dokumentace, pros/cons, technical debt", priority: "high" },
-  { task: "Aktivovat Scouta", desc: "Hledat firmy s neefektivitou vhodnou pro AI automatizaci", priority: "high" },
-  { task: "Aktivovat Strategistu", desc: "Připravit pitch na základě Scoutových leadů", priority: "medium" },
-  { task: "První Sovereign Event", desc: "Zpracovat Paparazzi captures do prvního postu", priority: "medium" },
-  { task: "Vyčistit dirty working trees", desc: ".cloud, .online, TextBrain, Projects Management", priority: "low" },
+  { id: "archivist", task: "Aktivovat Archivistu", desc: "Spustit audit projektů — dokumentace, pros/cons, technical debt", priority: "high" },
+  { id: "scout", task: "Aktivovat Scouta", desc: "Hledat firmy s neefektivitou vhodnou pro AI automatizaci", priority: "high" },
+  { id: "strategist", task: "Aktivovat Strategistu", desc: "Připravit pitch na základě Scoutových leadů", priority: "medium" },
+  { id: "event", task: "První Sovereign Event", desc: "Zpracovat Paparazzi captures do prvního postu", priority: "medium" },
+  { id: "cleanup", task: "Vyčistit dirty working trees", desc: ".cloud, .online, TextBrain, Projects Management", priority: "low" },
 ];
 
 const log = [
