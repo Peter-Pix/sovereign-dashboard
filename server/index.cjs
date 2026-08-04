@@ -236,15 +236,20 @@ Pracuj s více sektory, ne jen jedním. Buď faktický a ověřitelný — nepl�
     workspace: "strategist",
     prompt: `Jsi The Strategist — The Big Mouth Sovereign OS. Tvoje role: přeložit komplexitu do statusu a peněz.
 
-ÚKOL: Vytvoř konkrétní pitch pro jednoho z leadů, které našel Scout (ADAR účetnictví, CINK advokacie, Pragotour logistika, DárkyHry nebo Mariveo e-commerce).
+ÚKOL: Vytvoř konkrétní pitch pro nejlepšího kandidáta ze všech leadů, které našel Scout (15 celkem). Cíl: realitní/zdravotnictví/marketing/e-commerce firma s jasnou AI příležitostí.
 
 POSTUP:
-1. Přečti soubor /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/scout/leads.json (pokud existuje).
-2. Vyber jednoho leada a napiš pitch v Sovereign voice (zero bullshit, autentický český tón, hodnota místo technických detailů).
-3. Zapiš pitch do souboru /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/strategist/pitch-[leada].md
-4. Aktualizuj manifest /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/strategist/manifest.json (status, summary).
+1. Přečti leady ze souborů: /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/scout/leads.json, leads-new.json, leads-round2.json.
+2. Vyber JEDNOHO leada s nejsilnější AI příležitostí a největší pravděpodobností platby (velikost + jasný repetitivní problém).
+3. Napiš pitch v Sovereign voice (zero bullshit, autentický český tón, hodnota místo technických detailů). Pitch musí obsahovat:
+   - Hook (konkrétní problém té firmy)
+   - Hodnotu (co AI ušetří — čas, peníze, nervy)
+   - Konkrétní příklad (co se dá automatizovat)
+   - Close (nízkotlaká výzva — 20min call, bez závazku)
+4. Zapiš pitch do souboru /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/strategist/pitch-[leada].md
+5. Aktualizuj manifest /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/strategist/manifest.json (status, summary, targetLead).
 
-Pitch musí být konkrétní pro tu firmu, ne generický. Mluv o jejich skutečném problému.`,
+Pitch musí být konkrétní pro TU firmu, ne generický. Mluv o jejich skutečném problému. Vyber leada s největším byznys potenciálem.`,
   },
   archivist: {
     name: "The Archivist",
