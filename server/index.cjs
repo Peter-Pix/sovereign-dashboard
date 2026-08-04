@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { execSync, exec } = require("child_process");
+const { execSync, execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -182,6 +182,31 @@ app.patch("/api/bugs/:project/:id", (req, res) => {
   res.json(bug);
 });
 
+// ========== LEADS ==========
+// Načte všechny leady ze Scout workspace (leads.json, leads-new.json, leads-round2.json...)
+app.get('/api/leads', (req, res) => {
+  const scoutDir = path.join(SOVEREIGN_DIR, 'workspaces/scout');
+  const all = [];
+  if (fs.existsSync(scoutDir)) {
+    fs.readdirSync(scoutDir).filter(f => f.startsWith('leads') && f.endsWith('.json')).forEach((f) => {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(scoutDir, f), 'utf8'));
+        const leads = Array.isArray(data) ? data : (data.leads || []);
+        leads.forEach(l => all.push({ ...l, sourceFile: f }));
+      } catch {}
+    });
+  }
+  // deduplikace podle jména
+  const seen = new Set();
+  const unique = all.filter(l => {
+    const k = (l.name || '').toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  res.json(unique);
+});
+
 // ========== REÁLNÁ EXEKUCE AGENTŮ ==========
 // Mapování Sovereign agenta → exekuční prompt pro OpenClaw agenta (experimental)
 // Agent má přístup k souborům a gitu → reálně vykoná úkol a zapíše manifest.
@@ -194,15 +219,17 @@ const AGENT_TASKS = {
     workspace: "scout",
     prompt: `Jsi The Scout — The Big Eye Sovereign OS. Tvoje role: vidět peníze a příležitosti tam, kde ostatní vidí jen hromadu dat.
 
-ÚKOL: Najdi 3 nové české firmy (10-200 zaměstnanců) v sektorech účetnictví, právo, logistika nebo e-commerce, které mají repetitivní úkoly vhodné pro AI automatizaci.
+ÚKOL: Najdi 5-7 NOVÝCH českých firem (10-200 zaměstnanců) v sektorech: účetnictví, právo, logistika, e-commerce, výroba, zdravotnictví, realitní kanceláře, pojišťovnictví, marketingové agentury. Firmy, které mají repetitivní úkoly vhodné pro AI automatizaci.
+
+⚠️ NEPOUŽÍVEJ firmy, které už jsou v /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/scout/leads.json (ADAR, CINK, Pragotour, DárkyHry, Mariveo) ani v leads-new.json (ROWAN, Servant, OnlineShop).
 
 POSTUP:
-1. Vyhledej na webu (Seznam Firmy.cz, webové stránky) kvalifikované leady.
+1. Vyhledej na webu (web_search) kvalifikované leady v různých sektorech — zkoušej různé vyhledávací dotazy ("účetnická firma Praha", "advokátní kancelář Brno", "výrobní firma automatizace", "realitní kancelář AI", atd.).
 2. Pro každý lead zapiš: jméno, web, sektor, lokace, odhad velikosti, repetitivní úkol, AI value proposition.
-3. Zapiš výsledky do souboru /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/scout/leads-new.json (JSON).
+3. Zapiš výsledky do souboru /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/scout/leads-round2.json (JSON array).
 4. Aktualizuj manifest /Users/petrpiskacek/.openclaw/workspace/sovereign-os/workspaces/scout/manifest.json (status, summary, identity).
 
-Nepřidávej nové leady do původního leads.json (zachovej ho). Buď faktický a ověřitelný — neplň si to z hlavy.`,
+Pracuj s více sektory, ne jen jedním. Buď faktický a ověřitelný — neplň si to z hlavy. Ověřuj přes web_search.`,
   },
   strategist: {
     name: "The Strategist (The Big Mouth)",
@@ -259,7 +286,7 @@ function runAgentExe(agentName, callback) {
   }
 
   const args = ['agent', '--agent', EXEC_AGENT, '--json', '--model', SOVEREIGN_EXEC_MODEL, '-m', task.prompt];
-  exec(`openclaw ${args.map(a => `"${a}"`).join(' ')}`, {
+  execFile('openclaw', args, {
     timeout: 300000, // 5 min
     maxBuffer: 10 * 1024 * 1024,
   }, (err, stdout, stderr) => {
