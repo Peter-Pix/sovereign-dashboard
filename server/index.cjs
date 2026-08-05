@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const { execSync, execFile } = require("child_process");
+const { promisify } = require("util");
+const execFileP = promisify(execFile);
 const fs = require("fs");
 const path = require("path");
 
@@ -126,7 +128,154 @@ app.get("/api/agents", (req, res) => {
   res.json(agents);
 });
 
-// Paparazzi captures
+// ========== PAPARAZZI — DATA COLLECTOR ==========
+// Paparazzi není jen foťák. Sběrá data o projektech a sumarizuje je.
+// Data collection je ASYNC + PARALELNÍ + CACHOVANÝ — nikdy neblokuje event loop.
+
+// Složky, které nejsou „živé" projekty (backupy, staré verze, tooling)
+const SKIP_DIRS = /^(old_|openclaw-backup|.*\.bak|.*backup|node_modules|dist|\.next|\.cache|\.content-cache)/i;
+const EXCLUDE_DIRS = "--exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next --exclude-dir=dist --exclude-dir=.cache --exclude-dir=.content-cache --exclude-dir=build --exclude-dir=.turbo";
+
+// Async bounded shell — spustí příkaz v shellu, hard timeout, nikdy nevyhodí (neblokuje event loop)
+async function run(cmd, timeoutMs = 4000) {
+  try {
+    const { stdout } = await execFileP("/bin/zsh", ["-c", cmd], { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 });
+    return String(stdout).trim();
+  } catch {
+    return "";
+  }
+}
+
+// Počet zdrojových souborů (async, bounded)
+async function countSourceFiles(p) {
+  const out = await run(`find "${p}" -type f \\( -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' -o -name '*.cjs' -o -name '*.md' \\) -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.next/*' -not -path '*/dist/*' 2>/dev/null | wc -l`, 4000);
+  return parseInt(out, 10) || 0;
+}
+
+// Sběr reálných dat o jednom projektu — všechny git/grep/find volání PARALELNĚ (async)
+async function collectProjectData(name) {
+  const p = path.join(PROJECTS_DIR, name);
+  const git = (cmd) => run(`cd "${p}" && ${cmd} 2>/dev/null`, 4000);
+
+  // Všechny nezávislé příkazy spustíme najednou (Promise.allSettled) — výrazně rychlejší
+  const [status, lastCommitAgo, lastCommitDate, lastHash, lastMsg, branch, commits7d, commits30d, authors, grepOut, srcCount] = await Promise.allSettled([
+    git("git status --short"),
+    git("git log -1 --format=%cd --date=relative"),
+    git("git log -1 --format=%cd --date=iso"),
+    git("git log -1 --format=%h"),
+    git("git log -1 --format=%s"),
+    git("git branch --show-current"),
+    git("git log --oneline --since='7 days ago' 2>/dev/null | wc -l | tr -d ' '"),
+    git("git log --oneline --since='30 days ago' 2>/dev/null | wc -l | tr -d ' '"),
+    git("git log --format='%an' -5 2>/dev/null | sort -u | tr '\n' ', '"),
+    run(`grep -rInE "TODO|FIXME|HACK|XXX" "${p}" ${EXCLUDE_DIRS} --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.md' --include='*.cjs' 2>/dev/null | head -8`, 4000),
+    countSourceFiles(p),
+  ]);
+  const val = (r) => (r.status === "fulfilled" ? r.value : "");
+
+  const dirty = val(status).length > 0;
+
+  // TODO / FIXME
+  let todos = [];
+  if (val(grepOut)) {
+    todos = val(grepOut).split("\n").filter(Boolean).slice(0, 8).map(l => {
+      const m = l.match(/([^:]+):(\d+):(.*)/);
+      return m ? { file: m[1].replace(p + "/", ""), line: m[2], text: m[3].trim().slice(0, 80) } : null;
+    }).filter(Boolean);
+  }
+
+  // README existuje?
+  const hasReadme = ["README.md", "readme.md", "README"].some(f => fs.existsSync(path.join(p, f)));
+  const readmeLines = hasReadme ? (() => {
+    const f = ["README.md", "readme.md", "README"].find(f => fs.existsSync(path.join(p, f)));
+    try { return fs.readFileSync(path.join(p, f), "utf8").split("\n").filter(l => l.trim().length > 0).length; } catch { return 0; }
+  })() : 0;
+
+  // package.json deps count
+  let deps = 0, devDeps = 0, pkgName = "";
+  const pkgPath = path.join(p, "package.json");
+  if (fs.existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+      pkgName = pkg.name || "";
+      deps = Object.keys(pkg.dependencies || {}).length;
+      devDeps = Object.keys(pkg.devDependencies || {}).length;
+    } catch {}
+  }
+
+  const srcFiles = parseInt(val(srcCount), 10) || 0;
+
+  // Aktivita: kolik commitů za 30 dní
+  const activity = parseInt(val(commits30d), 10) || 0;
+  const activityLabel = activity >= 10 ? "hot" : activity >= 3 ? "active" : activity >= 1 ? "slow" : "idle";
+
+  // Health skóre 0-100
+  const hasRecent = activity >= 1;
+  const clean = !dirty;
+  const documented = hasReadme && readmeLines >= 5;
+  let health = 0;
+  health += hasRecent ? 30 : 0;
+  health += clean ? 25 : 0;
+  health += documented ? 20 : 0;
+  health += hasReadme ? 5 : 0;
+  health += activity >= 3 ? 10 : activity >= 1 ? 5 : 0;
+  health += todos.length === 0 ? 10 : Math.max(0, 10 - todos.length);
+  health = Math.min(100, health);
+
+  return {
+    name,
+    lastCommitAgo: val(lastCommitAgo),
+    lastCommitDate: val(lastCommitDate),
+    lastHash: val(lastHash),
+    lastMsg: val(lastMsg),
+    branch: val(branch),
+    dirty,
+    status: dirty ? "warn" : "ok",
+    commits7d: parseInt(val(commits7d), 10) || 0,
+    commits30d: activity,
+    authors: val(authors).replace(/,\s*$/, ""),
+    todos,
+    todoCount: todos.length,
+    hasReadme,
+    readmeLines,
+    pkgName,
+    deps,
+    devDeps,
+    srcFiles,
+    activity: activityLabel,
+    health,
+  };
+}
+
+// Sumarizace dat — vyhodí zbytečnosti, dá stručný přehled „co se děje"
+function summarizeProjects(projects) {
+  const total = projects.length;
+  const hot = projects.filter(p => p.activity === "hot");
+  const active = projects.filter(p => p.activity === "active");
+  const slow = projects.filter(p => p.activity === "slow");
+  const idle = projects.filter(p => p.activity === "idle");
+  const dirty = projects.filter(p => p.dirty);
+  const undocumented = projects.filter(p => !p.hasReadme);
+  const highTodo = projects.filter(p => p.todoCount >= 5);
+
+  const lines = [];
+  lines.push(`Sleduji ${total} projektů. ${hot.length} žhavých, ${active.length} aktivních, ${slow.length} pomalejších, ${idle.length} idle.`);
+  if (hot.length) lines.push(`🔥 Žhavé: ${hot.map(p => p.name).join(", ")}.`);
+  if (dirty.length) lines.push(`⚠️ Dirty working tree: ${dirty.map(p => p.name).join(", ")}.`);
+  if (undocumented.length) lines.push(`📄 Bez README: ${undocumented.map(p => p.name).join(", ")}.`);
+  if (highTodo.length) lines.push(`🧹 Naskládáno TODO: ${highTodo.map(p => `${p.name} (${p.todoCount})`).join(", ")}.`);
+  if (slow.length) lines.push(`🕸️ Pomalu aktivní: ${slow.map(p => p.name).join(", ")}.`);
+
+  if (lines.length === 0) lines.push("Všechny projekty jsou čisté a aktivní. Nic urgentního.");
+
+  return {
+    generatedAt: new Date().toISOString(),
+    counts: { total, hot: hot.length, active: active.length, slow: slow.length, idle: idle.length, dirty: dirty.length, undocumented: undocumented.length },
+    summary: lines,
+  };
+}
+
+// Hlavní Paparazzi endpoint — captures + data collection + summary
 app.get("/api/paparazzi", (req, res) => {
   const captures = [];
   if (fs.existsSync(PAPARAZZI_DIR)) {
@@ -141,6 +290,38 @@ app.get("/api/paparazzi", (req, res) => {
     });
   }
   res.json(captures);
+});
+
+// Server-side cache — data collection je drahý, tak ho cachujeme (60s) a obnovujeme na vyžádání
+let paparazziCache = null;
+let paparazziCacheAt = 0;
+const CACHE_TTL = 60000; // 60s
+
+// Data collection endpoint — všechna data o projektech (async, paralelní, cachovaný)
+app.get("/api/paparazzi/data", async (req, res) => {
+  // Refresh parametr: ?refresh=1 vynutí nový sběr
+  const force = req.query.refresh === "1";
+  const now = Date.now();
+
+  if (!force && paparazziCache && now - paparazziCacheAt < CACHE_TTL) {
+    return res.json({ ...paparazziCache, cached: true, cachedAt: paparazziCacheAt });
+  }
+
+  const dirs = fs.readdirSync(PROJECTS_DIR).filter(d => {
+    if (SKIP_DIRS.test(d)) return false; // vyhodit backupy / old / node_modules
+    try { return fs.statSync(path.join(PROJECTS_DIR, d)).isDirectory() && fs.existsSync(path.join(PROJECTS_DIR, d, ".git")); }
+    catch { return false; }
+  });
+
+  // Paralelní sběr — Promise.allSettled, neblokuje, výrazně rychlejší než sekvenční
+  const results = await Promise.allSettled(dirs.map((d) => collectProjectData(d)));
+  const projects = results.filter(r => r.status === "fulfilled" && r.value).map(r => r.value);
+
+  const summary = summarizeProjects(projects);
+  const payload = { projects, summary, cached: false };
+  paparazziCache = payload;
+  paparazziCacheAt = now;
+  res.json(payload);
 });
 
 // Bug tickets — vytvoření

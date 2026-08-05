@@ -10,6 +10,7 @@ Sovereign Dashboard is the central nervous system of the Sovereign OS workspace.
 - **Pipeline** — view queued tasks and priorities.
 - **Agents** — inspect manifest and log output from each Sovereign workspace agent.
 - **Log** — read the running operational log of milestones, victories, and struggles.
+- **Paparazzi** — data collector: prohlíží captures (fotky) + sbírá reálná data o projektech (git, aktivita, health, TODO) a sumarizuje je. Podrobnosti: `PAPARAZZI.md`.
 - **Project detail** — drill into a single project for its recent Git history and stored bug tickets.
 
 The frontend is a React + Vite + Tailwind CSS single-page app. The backend is a small Express API that reads the local filesystem and Git state.
@@ -69,6 +70,7 @@ sovereign-dashboard/
 | GET | `/api/projects/:name` | Project detail with last 10 commits and bugs |
 | GET | `/api/agents` | List Sovereign agent workspaces and logs |
 | GET | `/api/paparazzi` | List Paparazzi captures from iCloud |
+| GET | `/api/paparazzi/data` | Data collection: reálná data o projektech + shrnutí (cache 60s, `?refresh=1` vynutí) |
 | POST | `/api/bugs` | Create a bug ticket in a project |
 | PATCH | `/api/bugs/:project/:id` | Update bug status |
 
