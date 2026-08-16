@@ -1,7 +1,6 @@
 import { useState } from "react";
+import { API } from "../config";
 import { pipeline as seedPipeline, log as seedLog } from "../data/sovereign-data";
-
-const API = "http://localhost:8891";
 
 const priorityStyles = {
   high: { bg: "rgba(232,93,93,0.15)", color: "#e85d5d", border: "rgba(232,93,93,0.3)" },

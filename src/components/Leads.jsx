@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-
-const API = "http://localhost:8891";
+import { API } from "../config";
 
 const sectorColors = {
   accounting: { bg: "rgba(62,207,142,0.12)", color: "#3ecf8e" },

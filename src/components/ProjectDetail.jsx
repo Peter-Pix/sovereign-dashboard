@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-
-const API = "http://localhost:8891";
+import { API } from "../config";
 
 export default function ProjectDetail({ projectName, onBack }) {
   const [project, setProject] = useState(null);

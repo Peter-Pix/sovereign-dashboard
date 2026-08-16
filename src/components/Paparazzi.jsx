@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-
-const API = "http://localhost:8891";
+import { API } from "../config";
 
 const tagColors = {
   STRUGGLE: "#e85d5d",
