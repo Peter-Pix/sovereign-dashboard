@@ -536,6 +536,41 @@ app.post('/api/agents/:name/run', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`[Sovereign API] Běží na http://localhost:${PORT}`);
+
+// Health check — pro monitoring a auto-restart
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
+
+
+// Graceful shutdown — správné ukončení (SIGTERM/SIGINT)
+const server = app.listen(PORT, () => {
+  console.log(`[Sovereign API] Běží na http://localhost:${PORT}`);
+  // Zapsat PID pro start/stop skripty
+  try {
+    fs.writeFileSync(path.join(__dirname, "../server.pid"), String(process.pid));
+  } catch {}
+});
+
+// Graceful shutdown
+function shutdown(signal) {
+  console.log(`[Sovereign API] Přijat ${signal}, ukončuji...`);
+  server.close(() => {
+    try { fs.unlinkSync(path.join(__dirname, "../server.pid")); } catch {}
+    process.exit(0);
+  });
+  // Force exit po 5s, pokud se nepodaří zavřít
+  setTimeout(() => process.exit(1), 5000).unref();
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("uncaughtException", (err) => {
+  console.error("[Sovereign API] Uncaught exception:", err.message);
+  // Nezabíjet proces — logovat a pokračovat (stabilita)
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[Sovereign API] Unhandled rejection:", reason);
+  // Nezabíjet proces — logovat a pokračovat (stabilita)
+});
+

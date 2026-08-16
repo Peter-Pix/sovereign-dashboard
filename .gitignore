@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Runtime soubory
+server.pid
+server_debug.log
+test-results/
+playwright-report/
