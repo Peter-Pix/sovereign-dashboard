@@ -408,9 +408,9 @@ app.get('/api/leads', (req, res) => {
 });
 
 // ========== REÁLNÁ EXEKUCE AGENTŮ ==========
-// Mapování Sovereign agenta → exekuční prompt pro OpenClaw agenta (experimental)
+// Mapování Sovereign agenta → exekuční prompt pro OpenClaw agenta (main)
 // Agent má přístup k souborům a gitu → reálně vykoná úkol a zapíše manifest.
-const EXEC_AGENT = process.env.SOVEREIGN_EXEC_AGENT || 'experimental';
+const EXEC_AGENT = process.env.SOVEREIGN_EXEC_AGENT || 'main';
 const SOVEREIGN_EXEC_MODEL = process.env.SOVEREIGN_EXEC_MODEL || 'ollama/kimi-k2.7-code:cloud';
 
 const AGENT_TASKS = {
@@ -483,7 +483,7 @@ Buď věcný a stručný. Identifikuj, co je hotové a co je blokované.`,
   },
 };
 
-// Spustí exekuci agenta přes OpenClaw agenta (experimental)
+// Spustí exekuci agenta přes OpenClaw agenta (main)
 function runAgentExe(agentName, callback) {
   const task = AGENT_TASKS[agentName];
   if (!task) {
