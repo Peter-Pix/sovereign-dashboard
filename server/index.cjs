@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { execSync, execFile } = require("child_process");
+const { execFile } = require("child_process");
 const { promisify } = require("util");
 const execFileP = promisify(execFile);
 const fs = require("fs");
@@ -15,43 +15,66 @@ const PROJECTS_DIR = path.resolve(__dirname, "../../");
 const SOVEREIGN_DIR = path.resolve(__dirname, "../../../.openclaw/workspace/sovereign-os");
 const PAPARAZZI_DIR = path.join(process.env.HOME, "Library/Mobile Documents/com~apple~CloudDocs/Paparazzi");
 
-// ========== API ==========
+// Async bounded shell — spustí příkaz v shellu, hard timeout, nikdy nevyhodí (neblokuje event loop)
+async function run(cmd, timeoutMs = 4000) {
+  try {
+    const { stdout } = await execFileP("/bin/zsh", ["-c", cmd], { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 });
+    return String(stdout).trim();
+  } catch {
+    return "";
+  }
+}
 
-// Seznam projektů s reálnýma datama
-app.get("/api/projects", (req, res) => {
-  const projects = [];
-  const dirs = fs.readdirSync(PROJECTS_DIR).filter(d => {
+// Seznam git projektů pod PROJECTS_DIR
+function listProjectDirs() {
+  return fs.readdirSync(PROJECTS_DIR).filter(d => {
     try { return fs.statSync(path.join(PROJECTS_DIR, d)).isDirectory() && fs.existsSync(path.join(PROJECTS_DIR, d, ".git")); }
     catch { return false; }
   });
+}
 
-  dirs.forEach((name) => {
-    const p = path.join(PROJECTS_DIR, name);
-    try {
-      const lastCommit = execSync(`cd "${p}" && git log -1 --format=%cd --date=relative 2>/dev/null`, { encoding: "utf8" }).trim() || "unknown";
-      const branch = execSync(`cd "${p}" && git branch --show-current 2>/dev/null`, { encoding: "utf8" }).trim() || "unknown";
-      const status = execSync(`cd "${p}" && git status --short 2>/dev/null`, { encoding: "utf8" }).trim();
-      const dirty = status.length > 0;
-      const lastHash = execSync(`cd "${p}" && git log -1 --format=%h 2>/dev/null`, { encoding: "utf8" }).trim() || "unknown";
-      const lastMsg = execSync(`cd "${p}" && git log -1 --format=%s 2>/dev/null`, { encoding: "utf8" }).trim() || "unknown";
+// Sjednocený sběr git dat o jednom projektu (async, paralelní) — používá list i detail
+async function getProjectInfo(name, { withLog = false } = {}) {
+  const p = path.join(PROJECTS_DIR, name);
+  const git = (cmd) => run(`cd "${p}" && ${cmd} 2>/dev/null`, 4000);
 
-      projects.push({
-        name,
-        lastCommit,
-        branch,
-        dirty,
-        lastHash,
-        lastMsg,
-        status: dirty ? "warn" : "ok",
-      });
-    } catch {}
-  });
+  const [lastCommit, branch, status, lastHash, lastMsg, log] = await Promise.allSettled([
+    git("git log -1 --format=%cd --date=relative"),
+    git("git branch --show-current"),
+    git("git status --short"),
+    git("git log -1 --format=%h"),
+    git("git log -1 --format=%s"),
+    withLog ? git("git log --oneline -10") : Promise.resolve(""),
+  ]);
+  const val = (r) => (r.status === "fulfilled" ? r.value : "");
 
+  const dirty = val(status).length > 0;
+
+  const info = {
+    name,
+    lastCommit: val(lastCommit) || "unknown",
+    branch: val(branch) || "unknown",
+    dirty,
+    lastHash: val(lastHash) || "unknown",
+    lastMsg: val(lastMsg) || "unknown",
+    status: dirty ? "warn" : "ok",
+  };
+  if (withLog) info.log = val(log).split("\n").filter(Boolean);
+  return info;
+}
+
+// ========== API ==========
+
+// Seznam projektů s reálnýma datama
+app.get("/api/projects", async (req, res) => {
+  const dirs = listProjectDirs();
+  const results = await Promise.allSettled(dirs.map((name) => getProjectInfo(name)));
+  const projects = results.filter(r => r.status === "fulfilled" && r.value).map(r => r.value);
   res.json(projects);
 });
 
 // Detail projektu
-app.get("/api/projects/:name", (req, res) => {
+app.get("/api/projects/:name", async (req, res) => {
   const { name } = req.params;
   const p = path.join(PROJECTS_DIR, name);
   if (!fs.existsSync(p) || !fs.existsSync(path.join(p, ".git"))) {
@@ -59,13 +82,7 @@ app.get("/api/projects/:name", (req, res) => {
   }
 
   try {
-    const lastCommit = execSync(`cd "${p}" && git log -1 --format=%cd --date=relative 2>/dev/null`, { encoding: "utf8" }).trim() || "unknown";
-    const branch = execSync(`cd "${p}" && git branch --show-current 2>/dev/null`, { encoding: "utf8" }).trim() || "unknown";
-    const status = execSync(`cd "${p}" && git status --short 2>/dev/null`, { encoding: "utf8" }).trim();
-    const dirty = status.length > 0;
-    const lastHash = execSync(`cd "${p}" && git log -1 --format=%h 2>/dev/null`, { encoding: "utf8" }).trim() || "unknown";
-    const lastMsg = execSync(`cd "${p}" && git log -1 --format=%s 2>/dev/null`, { encoding: "utf8" }).trim() || "unknown";
-    const log = execSync(`cd "${p}" && git log --oneline -10 2>/dev/null`, { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+    const info = await getProjectInfo(name, { withLog: true });
 
     // Zkusíme najít bug tickets v projektu
     const bugsDir = path.join(p, "bugs");
@@ -77,22 +94,11 @@ app.get("/api/projects/:name", (req, res) => {
       });
     }
 
-    res.json({
-      name,
-      lastCommit,
-      branch,
-      dirty,
-      lastHash,
-      lastMsg,
-      log,
-      bugs,
-      status: dirty ? "warn" : "ok",
-    });
+    res.json({ ...info, bugs });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
 // Agent logy
 app.get("/api/agents", (req, res) => {
   const agentsDir = path.join(SOVEREIGN_DIR, "workspaces");
@@ -136,16 +142,6 @@ app.get("/api/agents", (req, res) => {
 // Složky, které nejsou „živé" projekty (backupy, staré verze, tooling)
 const SKIP_DIRS = /^(old_|openclaw-backup|.*\.bak|.*backup|node_modules|dist|\.next|\.cache|\.content-cache)/i;
 const EXCLUDE_DIRS = "--exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next --exclude-dir=dist --exclude-dir=.cache --exclude-dir=.content-cache --exclude-dir=build --exclude-dir=.turbo";
-
-// Async bounded shell — spustí příkaz v shellu, hard timeout, nikdy nevyhodí (neblokuje event loop)
-async function run(cmd, timeoutMs = 4000) {
-  try {
-    const { stdout } = await execFileP("/bin/zsh", ["-c", cmd], { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 });
-    return String(stdout).trim();
-  } catch {
-    return "";
-  }
-}
 
 // Počet zdrojových souborů (async, bounded)
 async function countSourceFiles(p) {
