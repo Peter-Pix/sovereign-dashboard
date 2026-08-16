@@ -7,7 +7,8 @@ A dark, minimal operational dashboard for the Sovereign OS. It gives a real-time
 Sovereign Dashboard is the central nervous system of the Sovereign OS workspace. It replaces scattered terminal checks with a single command center where you can:
 
 - **Pulse** — see every Git project under `~/projects`, its last commit, branch, dirty state, and latest message.
-- **Pipeline** — view queued tasks and priorities.
+- **Pipeline** — view queued tasks and priorities, and trigger real agent execution.
+- **Leady** — browse leads collected by the Scout agent (sector stats + filtering).
 - **Agents** — inspect manifest and log output from each Sovereign workspace agent.
 - **Log** — read the running operational log of milestones, victories, and struggles.
 - **Paparazzi** — data collector: prohlíží captures (fotky) + sbírá reálná data o projektech (git, aktivita, health, TODO) a sumarizuje je. Podrobnosti: `PAPARAZZI.md`.
@@ -23,15 +24,15 @@ Install dependencies once:
 npm install
 ```
 
-Start the frontend dev server:
+Start the frontend dev server and API together:
 
 ```bash
 npm run dev
 ```
 
-The UI will be available at http://localhost:8890.
+The UI will be available at http://localhost:3205.
 
-Start the API server (in a separate terminal):
+The API server (started by `npm run dev`, or standalone):
 
 ```bash
 node server/index.cjs
@@ -51,11 +52,14 @@ sovereign-dashboard/
 └── src/
     ├── App.jsx             # Tab shell, project detail routing, clock, header/footer
     ├── main.jsx            # React root
+    ├── config.js           # Single source of truth for the API base URL
     ├── components/
     │   ├── Pulse.jsx       # Live Git project grid (calls /api/projects)
-    │   ├── Pipeline.jsx    # Static task pipeline view
+    │   ├── Pipeline.jsx    # Task pipeline + real agent execution
+    │   ├── Leads.jsx       # Scout leads browser (sector stats + filter)
     │   ├── Agents.jsx      # Agent workspace viewer
     │   ├── Log.jsx         # Sovereign log view
+    │   ├── Paparazzi.jsx   # Data collector overview + captures
     │   └── ProjectDetail.jsx # Project detail + bugs
     ├── data/
     │   └── sovereign-data.js # Static seed data for Pipeline and Log
@@ -69,14 +73,17 @@ sovereign-dashboard/
 | GET | `/api/projects` | List all Git projects under `~/projects` |
 | GET | `/api/projects/:name` | Project detail with last 10 commits and bugs |
 | GET | `/api/agents` | List Sovereign agent workspaces and logs |
+| GET | `/api/leads` | List Scout leads (deduplicated across source files) |
 | GET | `/api/paparazzi` | List Paparazzi captures from iCloud |
 | GET | `/api/paparazzi/data` | Data collection: reálná data o projektech + shrnutí (cache 60s, `?refresh=1` vynutí) |
+| POST | `/api/paparazzi/capture` | Trigger a Paparazzi snapshot request |
+| POST | `/api/agents/:name/run` | Execute a Sovereign agent via OpenClaw |
 | POST | `/api/bugs` | Create a bug ticket in a project |
 | PATCH | `/api/bugs/:project/:id` | Update bug status |
 
 ### Notes
 
-- The frontend expects the API at `http://localhost:8891`. CORS is enabled.
+- The frontend expects the API at `http://localhost:8891` (configurable via `VITE_API_URL` in `src/config.js`). CORS is enabled.
 - Project status is derived from `git status --short` (`ok` = clean, `warn` = dirty).
 - Bug tickets are stored as JSON files under each project's `bugs/` directory.
 - Paparazzi captures are read from `~/Library/Mobile Documents/com~apple~CloudDocs/Paparazzi`.

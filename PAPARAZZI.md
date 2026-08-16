@@ -63,7 +63,7 @@ Zbytečnosti (každý commit, každý TODO, plné seznamy) se **nevyhazují do p
 ```bash
 cd ~/projects/sovereign-dashboard
 node server/index.cjs   # API na :8891
-npm run dev             # UI na :8890
+npm run dev             # UI na :3205
 ```
 
 Paparazzi tab v UI → **Přehled** (data + sumarizace) a **Captures** (foto).
