@@ -274,7 +274,7 @@ function Captures({ captures, tags, filter, setFilter }) {
               <p className="text-xs text-[#9d9d9d] mb-1 truncate">{c.title}</p>
               <p className="text-[10px] text-[#5c5c5c] font-mono mb-3">{c.timestamp}</p>
               <a
-                href={`file://${encodeURIComponent(
+                href={`${API}/api/files?p=${encodeURIComponent(
                   "/Users/petrpiskacek/Library/Mobile Documents/com~apple~CloudDocs/Paparazzi/" + c.filename
                 )}`}
                 target="_blank"

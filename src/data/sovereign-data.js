@@ -1,20 +1,5 @@
-// Reálná data z git logů a filesystému
-// Tohle se později nahradí API/backendem, ale pro teď je to živější než fake čísla
-
-const projects = [
-  { name: "petrpiskacek.cz", status: "ok", meta: "Portfolio", lastCommit: "před 19 min", dirty: false },
-  { name: "petrpiskacek.cloud", status: "warn", meta: "AI Hřiště", lastCommit: "před 18 hod", dirty: true },
-  { name: "petrpiskacek.online", status: "warn", meta: "Příběh", lastCommit: "před 2 dny", dirty: true },
-  { name: "Karel Robot", status: "ok", meta: "E-mailový admin", lastCommit: "před 2 týdny", dirty: false },
-  { name: "4rap.cz", status: "idle", meta: "Rapová databáze", lastCommit: "před 13 dny", dirty: false },
-  { name: "TextBrain v2", status: "warn", meta: "Cognitive Augmentation", lastCommit: "před 32 hod", dirty: true },
-  { name: "Robíci", status: "ok", meta: "AI Rodina", lastCommit: "před 2 dny", dirty: false },
-  { name: "Crisis Management", status: "ok", meta: "Audit Agency", lastCommit: "před 3 dny", dirty: false },
-  { name: "Housekeeper", status: "ok", meta: "System Maintenance", lastCommit: "před 3 dny", dirty: false },
-  { name: "Projects Management", status: "warn", meta: "AI PM", lastCommit: "před 3 dny", dirty: true },
-  { name: "Paparazzi", status: "ok", meta: "Screen Capture", lastCommit: "Běží", dirty: false },
-  { name: "Sovereign OS", status: "ok", meta: "Infrastructure", lastCommit: "Teď", dirty: false },
-];
+// Seed data pro Pipeline a Log (statické pohledy).
+// Pulse/Paparazzi berou reálná data z API — viz server/index.cjs.
 
 const pipeline = [
   { id: "archivist", task: "Aktivovat Archivistu", desc: "Spustit audit projektů — dokumentace, pros/cons, technical debt", priority: "high" },
@@ -34,4 +19,4 @@ const log = [
   { time: "00:57", tag: "struggle", text: "Sovereign Efficiency text — první verze moc uhlazená" },
 ];
 
-export { projects, pipeline, log };
+export { pipeline, log };

@@ -307,6 +307,24 @@ app.get("/api/paparazzi", (req, res) => {
   res.json(captures);
 });
 
+// Servírování lokálních souborů (workspace + Paparazzi captures) — file:// linky v prohlížeči nefungují
+app.get("/api/files", (req, res) => {
+  const { p } = req.query;
+  if (!p || typeof p !== "string") return res.status(400).json({ error: "p (path) required" });
+
+  // Bezpečnost: povolíme jen soubory uvnitř SOVEREIGN_DIR (workspaces) a PAPARAZZI_DIR
+  const abs = path.resolve(p);
+  const allowed = [SOVEREIGN_DIR, PAPARAZZI_DIR];
+  if (!allowed.some((root) => abs.startsWith(root + path.sep) || abs === root)) {
+    return res.status(403).json({ error: "Path outside allowed roots" });
+  }
+  if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+    return res.status(404).json({ error: "File not found" });
+  }
+  // dotfiles: "allow" — jinak send modul 404 na skryté adresáře (.openclaw)
+  res.sendFile(abs, { dotfiles: "allow" });
+});
+
 // Server-side cache — data collection je drahý, tak ho cachujeme (60s) a obnovujeme na vyžádání
 let paparazziCache = null;
 let paparazziCacheAt = 0;

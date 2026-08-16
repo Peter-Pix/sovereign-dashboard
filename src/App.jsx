@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Pulse from "./components/Pulse";
 import Pipeline from "./components/Pipeline";
 import Log from "./components/Log";
@@ -19,6 +19,12 @@ const tabs = [
 function App() {
   const [activeTab, setActiveTab] = useState("pulse");
   const [selectedProject, setSelectedProject] = useState(null);
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleSelectProject = (name) => {
     setSelectedProject(name);
@@ -41,10 +47,10 @@ function App() {
         </div>
         <div className="text-right">
           <div className="text-[22px] font-medium text-[#C89B3C] tabular-nums" id="clock">
-            {new Date().toLocaleTimeString("en-GB", { hour12: false })}
+            {now.toLocaleTimeString("en-GB", { hour12: false })}
           </div>
           <div className="text-[11px] text-[#5c5c5c] uppercase tracking-wider">
-            {new Date().toLocaleDateString("en-GB", {
+            {now.toLocaleDateString("en-GB", {
               weekday: "short",
               year: "numeric",
               month: "short",

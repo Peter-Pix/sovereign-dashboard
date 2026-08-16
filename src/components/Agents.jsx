@@ -73,7 +73,7 @@ export default function Agents() {
                 {running[agent.name] ? "Běží..." : "Spustit job"}
               </button>
               <a
-                href={`file://${agent.workspacePath}`}
+                href={`${API}/api/files?p=${encodeURIComponent(agent.workspacePath)}`}
                 className="text-[10px] text-[#C89B3C] hover:text-[#8f6f26]"
                 target="_blank"
                 rel="noreferrer"
