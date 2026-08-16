@@ -4,17 +4,24 @@ import { API } from "../config";
 export default function Agents() {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [running, setRunning] = useState({});
   const [jobLog, setJobLog] = useState([]);
 
   useEffect(() => {
     fetch(`${API}/api/agents`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         setAgents(data);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
   }, []);
 
   const runAgent = (name) => {
@@ -47,6 +54,7 @@ export default function Agents() {
   };
 
   if (loading) return <p className="text-[#5c5c5c]">Načítám agenty...</p>;
+  if (error) return <p className="text-[#e85d5d]">Chyba: {error}</p>;
 
   return (
     <div className="space-y-3">

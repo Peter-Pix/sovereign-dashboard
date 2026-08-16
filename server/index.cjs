@@ -504,12 +504,26 @@ function runAgentExe(agentName, callback) {
     return callback(new Error(`Neznámý agent: ${agentName}`));
   }
 
+  // Timeout — pokud exekuce trvá déle než 5 min, vrátí chybu
+  let finished = false;
+  const timeout = setTimeout(() => {
+    if (!finished) {
+      finished = true;
+      callback(new Error("Agent exekuce timeout (5 min)"));
+    }
+  }, 300000); // 5 min
+
   const args = ['agent', '--agent', EXEC_AGENT, '--json', '--model', SOVEREIGN_EXEC_MODEL, '-m', task.prompt];
   execFile('openclaw', args, {
     timeout: 300000, // 5 min
     maxBuffer: 10 * 1024 * 1024,
+    killSignal: 'SIGKILL', // force kill po timeoutu
   }, (err, stdout, stderr) => {
+    if (finished) return; // timeout už proběhl
+    finished = true;
+    clearTimeout(timeout);
     if (err) {
+      console.error(`[Agent ${agentName}] Exekuce selhala: ${err.message}`);
       return callback(new Error(`Exekuce selhala: ${err.message} — ${stderr.slice(0, 300)}`));
     }
     try {
@@ -525,12 +539,21 @@ function runAgentExe(agentName, callback) {
 }
 
 // Endpoint: spuštění agenta
+// Rate limiting: max 2 paralelní joby (ochrana proti přetížení)
+const runningJobs = new Set();
+const MAX_PARALLEL_JOBS = 2;
+
 app.post('/api/agents/:name/run', (req, res) => {
   const { name } = req.params;
   if (!AGENT_TASKS[name]) {
     return res.status(404).json({ error: `Neznámý agent: ${name}` });
   }
+  if (runningJobs.size >= MAX_PARALLEL_JOBS) {
+    return res.status(429).json({ error: `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.` });
+  }
+  runningJobs.add(name);
   runAgentExe(name, (err, result) => {
+    runningJobs.delete(name);
     if (err) return res.status(500).json({ error: err.message });
     res.json({ success: true, ...result });
   });

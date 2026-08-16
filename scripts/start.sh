@@ -33,6 +33,11 @@ nohup bash -c '
   while true; do
     node server/index.cjs >> server_debug.log 2>&1
     exit_code=$?
+    # Graceful shutdown (exit 0) — nechceme restartovat
+    if (( exit_code == 0 )); then
+      echo "[$(date)] Graceful shutdown (exit 0). Ukončuji wrapper." >> server_debug.log
+      exit 0
+    fi
     now=$(date +%s)
     # Reset window po 60s
     if (( now - window_start > 60 )); then
