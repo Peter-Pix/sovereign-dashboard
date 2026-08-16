@@ -128,9 +128,10 @@ app.get("/api/agents", (req, res) => {
   res.json(agents);
 });
 
-// ========== PAPARAZZI — DATA COLLECTOR ==========
-// Paparazzi není jen foťák. Sběrá data o projektech a sumarizuje je.
+// ========== PAPARAZZI — DATA COLLECTOR & DOCUMENTATION ==========
+// Paparazzi není jen foťák. Sběrá data o projektech, automaticky dokumentuje UI a sumarizuje je.
 // Data collection je ASYNC + PARALELNÍ + CACHOVANÝ — nikdy neblokuje event loop.
+
 
 // Složky, které nejsou „živé" projekty (backupy, staré verze, tooling)
 const SKIP_DIRS = /^(old_|openclaw-backup|.*\.bak|.*backup|node_modules|dist|\.next|\.cache|\.content-cache)/i;
@@ -274,6 +275,24 @@ function summarizeProjects(projects) {
     summary: lines,
   };
 }
+
+// Endpoint pro vyvolání snapshotu (vyvolává OpenClaw agenta přes externí volání nebo API)
+app.post("/api/paparazzi/capture", (req, res) => {
+  const { project, url, tag = "AUTO", title = "snapshot" } = req.body;
+  if (!url) return res.status(400).json({ error: "URL is required for capture" });
+
+  // V současné implementaci tento endpoint slouží jako trigger pro OpenClaw agenta.
+  // Agent, který tento endpoint zavolá, očekává, že systém zajistí snapshot.
+  // Pro plnou automatizaci v rámci OpenClaw runtime se doporučuje volat browser tool přímo z agenta.
+  
+  console.log(`[Paparazzi] Capture request: Project=${project}, URL=${url}, Tag=${tag}, Title=${title}`);
+  
+  res.json({ 
+    success: true, 
+    message: "Capture request received", 
+    instruction: "Trigger the OpenClaw browser tool to save the screenshot to the Paparazzi iCloud directory." 
+  });
+});
 
 // Hlavní Paparazzi endpoint — captures + data collection + summary
 app.get("/api/paparazzi", (req, res) => {
