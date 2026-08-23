@@ -2,14 +2,14 @@
 const fs = require("fs");
 
 module.exports = function registerPaparazzi(app, deps) {
-  const { config, requireAuth, SKIP_DIRS, collectProjectData, summarizeProjects, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama } = deps;
+  const { config, requireAuth, gatherAllData, buildPaparazziPrompt, callOllama } = deps;
 
   // --- Capture (trigger) ---
   app.post("/api/paparazzi/capture", requireAuth, (req, res) => {
     const { project, url, tag = "AUTO", title = "snapshot" } = req.body;
     if (!url) return res.status(400).json({ error: "URL is required for capture" });
     console.log(`[Paparazzi] Capture request: Project=${project}, URL=${url}, Tag=${tag}, Title=${title}`);
-    res.json({ success: true, message: "Capture request received", instruction: "Trigger the OpenClaw browser tool to save the screenshot to the Paparazzi iCloud directory." });
+    res.json({ success: true, message: "Capture request received" });
   });
 
   // --- Captures list ---
@@ -33,33 +33,58 @@ module.exports = function registerPaparazzi(app, deps) {
     if (!force && dataCache && now - dataCacheAt < config.PAPARAZZI_DATA_TTL_MS) {
       return res.json({ ...dataCache, cached: true, cachedAt: dataCacheAt });
     }
-    const { projects, summary, system } = await gatherAllData();
-    const payload = { projects, summary, system, cached: false };
-    dataCache = payload;
-    dataCacheAt = now;
-    res.json(payload);
+    try {
+      const { projects, summary, system } = await gatherAllData();
+      const payload = { projects, summary, system, cached: false };
+      dataCache = payload;
+      dataCacheAt = now;
+      res.json(payload);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  // --- Manažer Report (cached 60s) ---
-  let reportCache = null;
-  let reportCacheAt = 0;
+  // --- Streaming Report ---
   app.get("/api/paparazzi/report", async (req, res) => {
     const force = req.query.refresh === "1";
     const now = Date.now();
-    if (!force && reportCache && now - reportCacheAt < config.PAPARAZZI_CACHE_TTL_MS) {
-      return res.json({ ...reportCache, cached: true, cachedAt: reportCacheAt });
+    
+    // Check for cached report first (if not forced)
+    if (!force && fs.existsSync(config.PAPARAZZI_REPORT_FILE)) {
+      const stats = fs.statSync(config.PAPARAZZI_REPORT_FILE);
+      if (now - stats.mtimeMs < config.PAPARAZZI_CACHE_TTL_MS) {
+        const reportData = JSON.parse(fs.readFileSync(config.PAPARAZZI_REPORT_FILE, "utf8"));
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.write(`data: ${JSON.stringify({ type: "report", content: reportData.report, cached: true })}\n\n`);
+        return res.end();
+      }
     }
+
     try {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders();
+
       const { summary, system } = await gatherAllData();
+      res.write(`data: ${JSON.stringify({ type: "metadata", summary, system })}\n\n`);
+
       const prompt = buildPaparazziPrompt(system, summary);
-      const report = await callOllama(prompt);
-      const payload = { report: typeof report === "string" ? report : JSON.stringify(report), system, summary, generatedAt: new Date().toISOString(), cached: false };
-      reportCache = payload;
-      reportCacheAt = now;
-      res.json(payload);
+      const fullReport = await callOllama(prompt, (token) => {
+        res.write(`data: ${JSON.stringify({ type: "token", content: token })}\n\n`);
+      });
+
+      const reportPayload = { report: fullReport, system, summary, generatedAt: new Date().toISOString() };
+      fs.mkdirSync(config.PAPARAZZI_REPORT_DIR, { recursive: true });
+      fs.writeFileSync(config.PAPARAZZI_REPORT_FILE, JSON.stringify(reportPayload, null, 2));
+
+      res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+      res.end();
     } catch (err) {
-      console.error("[Paparazzi] Report selhal:", err.message);
-      res.status(500).json({ error: err.message });
+      console.error("[Paparazzi] Streaming error:", err.message);
+      res.write(`data: ${JSON.stringify({ type: "error", content: err.message })}\n\n`);
+      res.end();
     }
   });
 };

@@ -3,12 +3,15 @@ const fs = require("fs");
 const path = require("path");
 
 module.exports = function registerProjects(app, deps) {
-  const { config, isSafeName, listProjectDirs, getProjectInfo } = deps;
+  const { config, isSafeName, getProjectsCached, getProjectInfo } = deps;
 
   app.get("/api/projects", async (req, res) => {
-    const dirs = listProjectDirs();
-    const results = await Promise.allSettled(dirs.map((name) => getProjectInfo(name)));
-    res.json(results.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value));
+    try {
+      const projects = await getProjectsCached();
+      res.json(projects);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.get("/api/projects/:name", async (req, res) => {

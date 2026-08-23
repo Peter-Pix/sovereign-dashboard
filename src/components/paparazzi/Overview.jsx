@@ -1,33 +1,82 @@
 // Přehled — report, shrnutí, systém, karty projektů.
+import { useState, useEffect } from "react";
 import Markdown from "../Markdown";
 import { Stat } from "./Stat";
 import SystemGauge from "./SystemGauge";
 import ProjectCard from "./ProjectCard";
 import { fmtBytes } from "./constants";
+import { API as API_URL } from "../../config";
 
-export default function Overview({ summary, projects, system, report, cached }) {
+export default function Overview({ summary, projects, system, cached, refreshTrigger, onAddBug }) {
+  const [report, setReport] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [reportMeta, setReportMeta] = useState(null);
+
+  const streamReport = async (force = false) => {
+    setIsStreaming(true);
+    setReport("");
+    
+    try {
+      const response = await fetch(`${API_URL}/api/paparazzi/report${force ? "?refresh=1" : ""}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedReport = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n\n");
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const dataStr = line.replace("data: ", "");
+          try {
+            const data = JSON.parse(dataStr);
+            if (data.type === "token") {
+              accumulatedReport += data.content;
+              setReport(accumulatedReport);
+            } else if (data.type === "metadata") {
+              setReportMeta(data);
+            } else if (data.type === "report") {
+              setReport(data.content);
+            }
+          } catch (e) {
+            console.error("SSE parse error:", e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Streaming error:", e);
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  useEffect(() => {
+    streamReport(refreshTrigger);
+  }, [refreshTrigger]);
+
   const c = summary?.counts;
   return (
     <div className="space-y-5">
-      {/* Manažer Report */}
-      {report && (
-        <div className="bg-[#0d0d0d] border border-[#C89B3C]/30 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">
-              🎤 Paparazzi — Manažer Report
-            </h3>
-            <div className="flex items-center gap-2">
-              {report.cached && <span className="text-[10px] text-[#5c5c5c]">(cache)</span>}
-              <span className="text-[10px] text-[#5c5c5c] font-mono">
-                {report.generatedAt ? new Date(report.generatedAt).toLocaleTimeString("cs-CZ") : ""}
-              </span>
-            </div>
+      <div className="bg-[#0d0d0d] border border-[#C89B3C]/30 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">
+            🎤 Paparazzi — Manažer Report {isStreaming && <span className="ml-2 animate-pulse opacity-70">(píše...)</span>}
+          </h3>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-[#5c5c5c] font-mono">
+              {reportMeta?.generatedAt ? new Date(reportMeta.generatedAt).toLocaleTimeString("cs-CZ") : ""}
+            </span>
           </div>
-          <Markdown text={report.report} />
         </div>
-      )}
+        <div className="min-h-[60px]">
+          {report ? <Markdown text={report} /> : <p className="text-xs text-[#5c5c5c] italic">Paparazzi právě přemýšlí...</p>}
+        </div>
+      </div>
 
-      {/* Shrnutí */}
       {summary && (
         <div className="bg-[#111] border border-[#232323] rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
@@ -58,7 +107,6 @@ export default function Overview({ summary, projects, system, report, cached }) 
         </div>
       )}
 
-      {/* Systémový monitoring */}
       {system && (
         <div className="bg-[#111] border border-[#232323] rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
@@ -94,10 +142,9 @@ export default function Overview({ summary, projects, system, report, cached }) 
         </div>
       )}
 
-      {/* Karty projektů */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-cols-2 lg:grid-cols-3 gap-3">
         {projects.map((p) => (
-          <ProjectCard key={p.name} p={p} />
+          <ProjectCard key={p.name} p={p} onAddBug={onAddBug} />
         ))}
       </div>
     </div>

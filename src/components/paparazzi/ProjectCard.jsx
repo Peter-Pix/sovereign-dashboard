@@ -1,8 +1,22 @@
 // Karta projektu pro Paparazzi přehled.
+import { useState } from "react";
 import { activityMeta, healthColor } from "./constants";
 import { MiniStat } from "./Stat";
 
-export default function ProjectCard({ p }) {
+export default function ProjectCard({ p, onAddBug }) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [bugTitle, setBugTitle] = useState("");
+
+  const handleAddBug = async (e) => {
+    e.preventDefault();
+    if (!bugTitle.trim()) return;
+    
+    setIsAdding(true);
+    await onAddBug(p.name, { title: bugTitle, description: "Added via dashboard", severity: "medium" });
+    setBugTitle("");
+    setIsAdding(false);
+  };
+
   const act = activityMeta[p.activity] || activityMeta.idle;
   const dirty = p.dirty ? " ⚠️" : "";
 
@@ -48,8 +62,26 @@ export default function ProjectCard({ p }) {
         <MiniStat label="README" value={p.hasReadme ? p.readmeLines : "—"} />
       </div>
 
+      {/* Rychlé přidání bugu */}
+      <form onSubmit={handleAddBug} className="flex gap-1 mt-3 pt-3 border-t border-[#232323]">
+        <input
+          type="text"
+          value={bugTitle}
+          onChange={(e) => setBugTitle(e.target.value)}
+          placeholder="Nový bug..."
+          className="bg-[#0a0a0a] border border-[#232323] text-[10px] px-2 py-1 rounded-md text-[#e8e8e8] w-full focus:outline-none focus:border-[#C89B3C]"
+        />
+        <button 
+          type="submit" 
+          disabled={isAdding || !bugTitle.trim()}
+          className="bg-[#C89B3C] text-black text-[10px] font-bold px-2 py-1 rounded-md hover:bg-[#e5b34b] disabled:opacity-50 transition-colors"
+        >
+          {isAdding ? "..." : "+"}
+        </button>
+      </form>
+
       {p.todos.length > 0 && (
-        <div className="text-[10px] text-[#5c5c5c] space-y-0.5">
+        <div className="text-[10px] text-[#5c5c5c] space-y-0.5 mt-3">
           {p.todos.slice(0, 2).map((t, i) => (
             <p key={i} className="truncate" title={t.text}>
               <span className="text-[#e5b34b]">▸</span> {t.file}:{t.line} {t.text}

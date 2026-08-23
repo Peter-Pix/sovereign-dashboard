@@ -30,7 +30,7 @@ const fs = require("fs");
 const path = require("path");
 
 const config = require("./config.cjs");
-const { isSafeName, listProjectDirs, getProjectInfo } = require("./lib/projects.cjs");
+const { isSafeName, listProjectDirs, getProjectInfo, getProjectsCached } = require("./lib/projects.cjs");
 const { collectSystemData } = require("./lib/system.cjs");
 const { buildPaparazziPrompt, callOllama, gatherAllData, PAPARAZZI_REPORT_DIR, PAPARAZZI_REPORT_FILE, PAPARAZZI_HISTORY_FILE } = require("./lib/paparazzi.cjs");
 const { AGENT_TASKS, runAgentExe } = require("./lib/agents.cjs");
@@ -57,7 +57,7 @@ function requireAuth(req, res, next) {
 }
 
 // ===== Sdílené dependency pro routes =====
-const deps = { config, requireAuth, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe };
+const deps = { config, requireAuth, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, getProjectsCached, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe };
 
 // ===== Registrace routes =====
 require("./routes/projects.cjs")(app, deps);

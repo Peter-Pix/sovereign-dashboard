@@ -12,7 +12,6 @@ export default function Paparazzi() {
   const [filter, setFilter] = useState("ALL");
   const [view, setView] = useState("overview"); // overview | captures
   const [refreshing, setRefreshing] = useState(false);
-  const [report, setReport] = useState(null);
 
   const load = (force = false) => {
     setLoading(true);
@@ -21,12 +20,10 @@ export default function Paparazzi() {
     Promise.all([
       cachedFetch(url("/api/paparazzi"), { force }),
       cachedFetch(url("/api/paparazzi/data"), { force }),
-      cachedFetch(url("/api/paparazzi/report"), { force }).catch(() => null),
     ])
-      .then(([caps, d, rep]) => {
+      .then(([caps, d]) => {
         setCaptures(caps);
         setData(d);
-        setReport(rep);
         setLoading(false);
         setRefreshing(false);
       })
@@ -54,6 +51,39 @@ export default function Paparazzi() {
 
   const tags = ["ALL", ...new Set(captures.map((c) => c.tag))];
   const filtered = filter === "ALL" ? captures : captures.filter((c) => c.tag === filter);
+
+  // --- Optimistické UI pro Bugy (Pomocná funkce pro ProjectCard) ---
+  const addBugOptimistically = async (projectName, bugData) => {
+    // 1. Okamžitá aktualizace lokálního state (simulace)
+    setData(prev => {
+      if (!prev || !prev.projects) return prev;
+      return {
+        ...prev,
+        projects: prev.projects.map(p => 
+          p.name === projectName 
+            ? { ...p, bugs: [...(p.bugs || []), { ...bugData, id: "temp-id", status: "open" }] } 
+            : p
+        )
+      };
+    });
+
+    try {
+      const res = await fetch(`${API}/api/bugs`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "x-auth-token": process.env.VITE_AUTH_TOKEN 
+        },
+        body: JSON.stringify({ project: projectName, ...bugData })
+      });
+      if (!res.ok) throw new Error("Failed to save bug");
+      // Po úspěchu data znovu načteme, aby se zaktualizovaly ID
+      load(true);
+    } catch {
+      setError("Failed to add bug. Reverting...");
+      load(false); // Vrátit se k poslednímu stabilnímu stavu
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -87,7 +117,14 @@ export default function Paparazzi() {
       {loading && !refreshing ? (
         <p className="text-[#5c5c5c]">Paparazzi sbírá data...</p>
       ) : view === "overview" ? (
-        <Overview summary={summary} projects={sortedProjects} system={data?.system} report={report} cached={data?.cached} />
+        <Overview 
+          summary={summary} 
+          projects={sortedProjects} 
+          system={data?.system} 
+          cached={data?.cached} 
+          refreshTrigger={refreshing} 
+          onAddBug={addBugOptimistically} 
+        />
       ) : (
         <Captures captures={filtered} tags={tags} filter={filter} setFilter={setFilter} />
       )}
