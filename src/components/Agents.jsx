@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { API, authHeaders } from "../config";
+import { API, authHeaders, cachedFetch } from "../config";
 
 export default function Agents() {
   const [agents, setAgents] = useState([]);
@@ -9,11 +9,7 @@ export default function Agents() {
   const [jobLog, setJobLog] = useState([]);
 
   useEffect(() => {
-    fetch(`${API}/api/agents`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+    cachedFetch(`${API}/api/agents`)
       .then((data) => {
         setAgents(data);
         setLoading(false);

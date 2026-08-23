@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { API } from "../config";
+import { API, cachedFetch } from "../config";
 
 const tagColors = {
   STRUGGLE: "#e85d5d",
@@ -33,9 +33,9 @@ export default function Paparazzi() {
     setError(null);
     const url = (p) => `${API}${p}${force ? "?refresh=1" : ""}`;
     Promise.all([
-      fetch(url("/api/paparazzi")).then((r) => r.json()),
-      fetch(url("/api/paparazzi/data")).then((r) => r.json()),
-      fetch(url("/api/paparazzi/report")).then((r) => r.json()).catch(() => null),
+      cachedFetch(url("/api/paparazzi"), { force }),
+      cachedFetch(url("/api/paparazzi/data"), { force }),
+      cachedFetch(url("/api/paparazzi/report"), { force }).catch(() => null),
     ])
       .then(([caps, d, rep]) => {
         setCaptures(caps);

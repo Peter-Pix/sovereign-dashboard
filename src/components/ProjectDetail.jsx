@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { API, authHeaders } from "../config";
+import { API, authHeaders, cachedFetch, invalidateCache } from "../config";
 
 export default function ProjectDetail({ projectName, onBack }) {
   const [project, setProject] = useState(null);
@@ -13,8 +13,7 @@ export default function ProjectDetail({ projectName, onBack }) {
 
   useEffect(() => {
     if (!projectName) return;
-    fetch(`${API}/api/projects/${encodeURIComponent(projectName)}`)
-      .then((r) => r.json())
+    cachedFetch(`${API}/api/projects/${encodeURIComponent(projectName)}`)
       .then((data) => {
         setProject(data);
         setLoading(false);
@@ -43,9 +42,9 @@ export default function ProjectDetail({ projectName, onBack }) {
         setBugDesc("");
         setBugSeverity("medium");
         setShowBugForm(false);
-        // reload
-        return fetch(`${API}/api/projects/${encodeURIComponent(projectName)}`)
-          .then((r) => r.json())
+        // reload (invalidate cache, pak fresh fetch)
+        invalidateCache(`${API}/api/projects/${encodeURIComponent(projectName)}`);
+        return cachedFetch(`${API}/api/projects/${encodeURIComponent(projectName)}`, { force: true })
           .then(setProject);
       })
       .catch((err) => setBugError(err.message))

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { API } from "../config";
+import { API, cachedFetch } from "../config";
 
 const sectorColors = {
   accounting: { bg: "rgba(62,207,142,0.12)", color: "#3ecf8e" },
@@ -24,8 +24,7 @@ export default function Leads() {
 
   const load = () => {
     setLoading(true);
-    fetch(`${API}/api/leads`)
-      .then((r) => r.json())
+    cachedFetch(`${API}/api/leads`)
       .then((data) => {
         setLeads(data);
         setLoading(false);

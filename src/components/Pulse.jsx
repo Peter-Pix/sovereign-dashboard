@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { API } from "../config";
+import { API, cachedFetch } from "../config";
 
 const statusColors = {
   ok: "#3ecf8e",
@@ -14,11 +14,7 @@ export default function Pulse({ onSelectProject }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch(`${API}/api/projects`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+    cachedFetch(`${API}/api/projects`)
       .then((data) => {
         setProjects(data);
         setLoading(false);
