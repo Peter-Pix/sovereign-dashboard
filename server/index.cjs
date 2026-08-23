@@ -812,7 +812,7 @@ setTimeout(() => {
 // ===== OLLAMA — LLM pro Paparazzi report =====
 // Ollama (lokální server :11434, cloud modely). Žádné API klíče, žádná externí závislost.
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "kimi-k2.7-code:cloud";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "minimax-m3:cloud";
 
 // Cache reportu (60s)
 let paparazziReportCache = null;
