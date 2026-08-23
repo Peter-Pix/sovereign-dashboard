@@ -25,6 +25,8 @@ export default function Paparazzi() {
   const [filter, setFilter] = useState("ALL");
   const [view, setView] = useState("overview"); // overview | captures
   const [refreshing, setRefreshing] = useState(false);
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
 
   const load = (force = false) => {
     setLoading(true);
@@ -33,10 +35,12 @@ export default function Paparazzi() {
     Promise.all([
       fetch(url("/api/paparazzi")).then((r) => r.json()),
       fetch(url("/api/paparazzi/data")).then((r) => r.json()),
+      fetch(url("/api/paparazzi/report")).then((r) => r.json()).catch(() => null),
     ])
-      .then(([caps, d]) => {
+      .then(([caps, d, rep]) => {
         setCaptures(caps);
         setData(d);
+        setReport(rep);
         setLoading(false);
         setRefreshing(false);
       })
@@ -99,7 +103,7 @@ export default function Paparazzi() {
       {loading && !refreshing ? (
         <p className="text-[#5c5c5c]">Paparazzi sbírá data...</p>
       ) : view === "overview" ? (
-        <Overview summary={summary} projects={sortedProjects} cached={data?.cached} />
+        <Overview summary={summary} projects={sortedProjects} system={data?.system} report={report} reportLoading={reportLoading} cached={data?.cached} />
       ) : (
         <Captures captures={filtered} tags={tags} filter={filter} setFilter={setFilter} />
       )}
@@ -108,10 +112,31 @@ export default function Paparazzi() {
 }
 
 /* ============ PŘEHLED — data o projektech + shrnutí ============ */
-function Overview({ summary, projects, cached }) {
+function Overview({ summary, projects, system, report, reportLoading, cached }) {
   const c = summary?.counts;
   return (
     <div className="space-y-5">
+
+      {/* Manažer Report — Paparazzi komunikuje jako člověk */}
+      {report && (
+        <div className="bg-[#0d0d0d] border border-[#C89B3C]/30 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">
+              🎤 Paparazzi — Manažer Report
+            </h3>
+            <div className="flex items-center gap-2">
+              {report.cached && <span className="text-[10px] text-[#5c5c5c]">(cache)</span>}
+              <span className="text-[10px] text-[#5c5c5c] font-mono">
+                {report.generatedAt ? new Date(report.generatedAt).toLocaleTimeString("cs-CZ") : ""}
+              </span>
+            </div>
+          </div>
+          <div className="text-[13px] text-[#d4d4d4] leading-relaxed whitespace-pre-wrap">
+            {report.report}
+          </div>
+        </div>
+      )}
+
       {/* Shrnutí — sumarizace, vyhozené zbytečnosti */}
       {summary && (
         <div className="bg-[#111] border border-[#232323] rounded-xl p-4">
@@ -141,6 +166,45 @@ function Overview({ summary, projects, cached }) {
               <Stat label="Bez README" value={c.undocumented} color={c.undocumented ? "#e5b34b" : "#9d9d9d"} />
             </div>
           )}
+        </div>
+      )}
+
+
+      {/* Systémový monitoring — Paparazzi "The Big Eye" */}
+      {system && (
+        <div className="bg-[#111] border border-[#232323] rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">
+              🖥️ Systém — The Big Eye
+            </h3>
+            <span className="text-[10px] text-[#5c5c5c] font-mono">{system.hostname}</span>
+          </div>
+
+          {/* CPU / RAM / Disk */}
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            <SystemGauge label="CPU" pct={system.cpu?.pct} sub={`${system.cpu?.load1}/${system.cpu?.load5} load`} />
+            <SystemGauge label="RAM" pct={system.memory?.pct} sub={fmtBytes(system.memory?.used)} />
+            <SystemGauge label="Disk" pct={system.disk?.pct} sub={`${system.disk?.used} / ${system.disk?.total}`} />
+          </div>
+
+          {/* Top procesy */}
+          {system.processes?.length > 0 && (
+            <div className="border-t border-[#232323] pt-3">
+              <p className="text-[10px] uppercase tracking-wider text-[#5c5c5c] mb-2">Top procesy (CPU)</p>
+              <div className="space-y-1">
+                {system.processes.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#9d9d9d] truncate mr-2">{p.cmd}</span>
+                    <span className="text-[#5c5c5c] font-mono shrink-0">{p.cpu}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p className="text-[10px] text-[#5c5c5c] mt-3 border-t border-[#232323] pt-2">
+            Uptime: {system.uptime} · {system.platform}
+          </p>
         </div>
       )}
 
@@ -289,4 +353,36 @@ function Captures({ captures, tags, filter, setFilter }) {
       )}
     </div>
   );
+}
+
+/* ============ SYSTÉMOVÝ GAUGE ============ */
+function SystemGauge({ label, pct, sub }) {
+  const color = pct >= 80 ? "#e85d5d" : pct >= 60 ? "#e5b34b" : "#3ecf8e";
+  return (
+    <div className="text-center">
+      <div className="relative w-16 h-16 mx-auto mb-1">
+        <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90">
+          <circle cx="18" cy="18" r="15.9" fill="none" stroke="#232323" strokeWidth="3" />
+          <circle
+            cx="18" cy="18" r="15.9" fill="none"
+            stroke={color} strokeWidth="3" strokeLinecap="round"
+            strokeDasharray={`${(pct || 0) * 1.0} 100`}
+          />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-sm font-bold" style={{ color }}>
+          {pct}%
+        </span>
+      </div>
+      <div className="text-[10px] uppercase tracking-wider text-[#5c5c5c]">{label}</div>
+      <div className="text-[9px] text-[#5c5c5c] font-mono">{sub}</div>
+    </div>
+  );
+}
+
+function fmtBytes(bytes) {
+  if (!bytes) return "?";
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1) return gb.toFixed(1) + " GB";
+  const mb = bytes / (1024 * 1024);
+  return mb.toFixed(0) + " MB";
 }

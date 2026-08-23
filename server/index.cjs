@@ -145,7 +145,7 @@ const EXCLUDE_DIRS = "--exclude-dir=node_modules --exclude-dir=.git --exclude-di
 
 // Počet zdrojových souborů (async, bounded)
 async function countSourceFiles(p) {
-  const out = await run(`find "${p}" -type f \\( -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' -o -name '*.cjs' -o -name '*.md' \\) -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.next/*' -not -path '*/dist/*' 2>/dev/null | wc -l`, 4000);
+  const out = await run(`find "${p}" -type f \\( -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' -o -name '*.cjs' -o -name '*.md' \\) -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.next/*' -not -path '*/dist/*' 2>/dev/null | wc -l`, 2500);
   return parseInt(out, 10) || 0;
 }
 
@@ -165,7 +165,7 @@ async function collectProjectData(name) {
     git("git log --oneline --since='7 days ago' 2>/dev/null | wc -l | tr -d ' '"),
     git("git log --oneline --since='30 days ago' 2>/dev/null | wc -l | tr -d ' '"),
     git("git log --format='%an' -5 2>/dev/null | sort -u | tr '\n' ', '"),
-    run(`grep -rInE "TODO|FIXME|HACK|XXX" "${p}" ${EXCLUDE_DIRS} --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.md' --include='*.cjs' 2>/dev/null | head -8`, 4000),
+    run(`grep -rInE "TODO|FIXME|HACK|XXX" "${p}" ${EXCLUDE_DIRS} --include='*.js' --include='*.jsx' --include='*.ts' --include='*.tsx' --include='*.md' --include='*.cjs' 2>/dev/null | head -8`, 2500),
     countSourceFiles(p),
   ]);
   const val = (r) => (r.status === "fulfilled" ? r.value : "");
@@ -241,6 +241,95 @@ async function collectProjectData(name) {
     srcFiles,
     activity: activityLabel,
     health,
+  };
+}
+// ========== SYSTÉMOVÝ MONITORING — Paparazzi "The Big Eye" ==========
+// Sběr reálných systémových dat (CPU, RAM, disky, procesy, služby)
+// Všechna volání PARALELNĚ (Promise.allSettled) — neblokuje event loop.
+
+async function collectSystemData() {
+  const os = require("os");
+
+  // Všechny nezávislé příkazy spustíme najednou
+  const [loadAvg, memStats, diskStats, topProcs, uptime] = await Promise.allSettled([
+    run("sysctl -n vm.loadavg 2>/dev/null | awk '{print $1, $2, $3}'"),
+    run("vm_stat 2>/dev/null | head -6"),
+    run("df -h / 2>/dev/null | tail -1"),
+    run("ps aux -r 2>/dev/null | head -6 | tail -5"),
+    run("uptime 2>/dev/null"),
+  ]);
+  const val = (r) => (r.status === "fulfilled" ? r.value : "");
+
+  // CPU — load average (1, 5, 15 min) vs počet jader
+  const cores = os.cpus().length;
+  const loadParts = val(loadAvg).split(/\s+/).map(Number).filter(n => !isNaN(n));
+  const load1 = loadParts[0] || 0;
+  const load5 = loadParts[1] || 0;
+  const load15 = loadParts[2] || 0;
+  const cpuPct = Math.min(100, Math.round((load1 / cores) * 100));
+
+  // RAM — z vm_stat (page size 16384)
+  const memLines = val(memStats).split("\n");
+  const pageSize = 16384;
+  const parseMem = (label) => {
+    const line = memLines.find(l => l.includes(label));
+    if (!line) return 0;
+    const m = line.match(/(\d+)/);
+    return m ? parseInt(m[1], 10) * pageSize : 0;
+  };
+  const freePages = parseMem("Pages free");
+  const activePages = parseMem("Pages active");
+  const inactivePages = parseMem("Pages inactive");
+  const speculativePages = parseMem("Pages speculative");
+  const totalMem = os.totalmem();
+  const usedMem = totalMem - freePages - inactivePages - speculativePages;
+  const memPct = Math.min(100, Math.round((usedMem / totalMem) * 100));
+
+  // Disky — df -h /
+  const diskParts = val(diskStats).split(/\s+/);
+  const diskTotal = diskParts[1] || "?";
+  const diskUsed = diskParts[2] || "?";
+  const diskAvail = diskParts[3] || "?";
+  const diskPct = parseInt((diskParts[4] || "0").replace("%", ""), 10) || 0;
+
+  // Top procesy (CPU)
+  const procs = val(topProcs).split("\n").filter(Boolean).map(line => {
+    const parts = line.trim().split(/\s+/);
+    return {
+      cpu: parseFloat(parts[2]) || 0,
+      mem: parseFloat(parts[3]) || 0,
+      cmd: parts.slice(10).join(" ").slice(0, 40) || "?",
+    };
+  }).slice(0, 5);
+
+  // Uptime
+  const upParts = val(uptime).match(/up\s+([^,]+)/);
+  const uptimeStr = upParts ? upParts[1].trim() : "?";
+
+  return {
+    cpu: {
+      cores,
+      load1: +load1.toFixed(2),
+      load5: +load5.toFixed(2),
+      load15: +load15.toFixed(2),
+      pct: cpuPct,
+    },
+    memory: {
+      total: totalMem,
+      used: usedMem,
+      free: totalMem - usedMem,
+      pct: memPct,
+    },
+    disk: {
+      total: diskTotal,
+      used: diskUsed,
+      avail: diskAvail,
+      pct: diskPct,
+    },
+    processes: procs,
+    uptime: uptimeStr,
+    hostname: os.hostname(),
+    platform: `${os.platform()} ${os.release()}`,
   };
 }
 
@@ -328,7 +417,7 @@ app.get("/api/files", (req, res) => {
 // Server-side cache — data collection je drahý, tak ho cachujeme (60s) a obnovujeme na vyžádání
 let paparazziCache = null;
 let paparazziCacheAt = 0;
-const CACHE_TTL = 60000; // 60s
+const CACHE_TTL = 300000; // 5 min — data o projektech se nemění tak často
 
 // Data collection endpoint — všechna data o projektech (async, paralelní, cachovaný)
 app.get("/api/paparazzi/data", async (req, res) => {
@@ -351,7 +440,8 @@ app.get("/api/paparazzi/data", async (req, res) => {
   const projects = results.filter(r => r.status === "fulfilled" && r.value).map(r => r.value);
 
   const summary = summarizeProjects(projects);
-  const payload = { projects, summary, cached: false };
+  const system = await collectSystemData();
+  const payload = { projects, summary, system, cached: false };
   paparazziCache = payload;
   paparazziCacheAt = now;
   res.json(payload);
@@ -576,6 +666,221 @@ const server = app.listen(PORT, () => {
 });
 
 // Graceful shutdown
+
+// ========== PAPARAZZI — AUTOMATICKÝ BĚH V POZADÍ ==========
+// Paparazzi "pracuje sám" — každých 30 min generuje Manažer Report
+// a ukládá ho do souboru (historie). Jediné, co můžeš říct, je "ať se podívá znovu".
+
+const PAPARAZZI_REPORT_DIR = path.join(SOVEREIGN_DIR, "workspaces/paparazzi");
+const PAPARAZZI_REPORT_FILE = path.join(PAPARAZZI_REPORT_DIR, "paparazzi-report.json");
+const PAPARAZZI_HISTORY_FILE = path.join(PAPARAZZI_REPORT_DIR, "paparazzi-history.json");
+const PAPARAZZI_INTERVAL_MS = 60 * 60 * 1000; // 60 minut — LLM call je nákladný
+
+// Generovat report a uložit (sdílená logika s endpointem)
+async function generatePaparazziReport() {
+  try {
+    const [system, projects] = await Promise.all([
+      collectSystemData(),
+      (async () => {
+        const dirs = fs.readdirSync(PROJECTS_DIR).filter(d => {
+          if (SKIP_DIRS.test(d)) return false;
+          try { return fs.statSync(path.join(PROJECTS_DIR, d)).isDirectory() && fs.existsSync(path.join(PROJECTS_DIR, d, ".git")); }
+          catch { return false; }
+        });
+        const results = await Promise.allSettled(dirs.map((d) => collectProjectData(d)));
+        return results.filter(r => r.status === "fulfilled" && r.value).map(r => r.value);
+      })(),
+    ]);
+    const summary = summarizeProjects(projects);
+
+    const character = await getPaparazziCharacter();
+    const prompt = buildPaparazziPrompt(character, system, summary);
+    const llmRes = await fetch(`https://base44.app/api/apps/${PERSONAGE_APP_ID}/integration-endpoints/Core/InvokeLLM`, {
+      method: "POST",
+      headers: { "x-api-key": PERSONAGE_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    const report = await llmRes.json();
+
+    const payload = {
+      report: typeof report === "string" ? report : JSON.stringify(report),
+      system,
+      summary,
+      generatedAt: new Date().toISOString(),
+    };
+
+    // Uložit aktuální report
+    fs.mkdirSync(PAPARAZZI_REPORT_DIR, { recursive: true });
+    fs.writeFileSync(PAPARAZZI_REPORT_FILE, JSON.stringify(payload, null, 2));
+
+    // Přidat do historie (max 50 záznamů)
+    let history = [];
+    try { history = JSON.parse(fs.readFileSync(PAPARAZZI_HISTORY_FILE, "utf8")); } catch {}
+    history.push({ generatedAt: payload.generatedAt, report: payload.report, summary: payload.summary?.counts });
+    if (history.length > 50) history = history.slice(-50);
+    fs.writeFileSync(PAPARAZZI_HISTORY_FILE, JSON.stringify(history, null, 2));
+
+    console.log(`[Paparazzi] Auto-report uložen (${new Date().toISOString()})`);
+    return payload;
+  } catch (err) {
+    console.error("[Paparazzi] Auto-report selhal:", err.message);
+    return null;
+  }
+}
+
+// Spustit automatický běh — Paparazzi pracuje sám v pozadí
+setInterval(() => {
+  generatePaparazziReport();
+}, PAPARAZZI_INTERVAL_MS);
+
+// První běh po 30s (ať se neblokuje start serveru)
+setTimeout(() => {
+  generatePaparazziReport();
+}, 30000);
+
+// ========== PAPARAZZI — MANAŽER REPORT (Personage integrace) ==========
+// Volá Paparazzi postavu v Personage (Base44) s reálnými daty o systému a projektech.
+// Paparazzi odpoví lidskou zprávou — "Manažer Report".
+
+const PERSONAGE_API_KEY = process.env.PERSONAGE_API_KEY || "REDACTED_API_KEY";
+const PERSONAGE_APP_ID = process.env.PERSONAGE_APP_ID || "69ac913307aa23cc54bd2841";
+const PAPARAZZI_CHAR_ID = process.env.PAPARAZZI_CHAR_ID || "6a823669bb9b7900a5bd72ec";
+
+// Cache reportu (60s)
+let paparazziReportCache = null;
+let paparazziReportCacheAt = 0;
+
+async function getPaparazziCharacter() {
+  const res = await fetch(`https://personage.base44.app/functions/apiCharacter?id=${PAPARAZZI_CHAR_ID}`, {
+    headers: { "x-api-key": PERSONAGE_API_KEY },
+  });
+  const data = await res.json();
+  return data.character;
+}
+
+function buildPaparazziPrompt(character, system, summary) {
+  const layers = [
+    character.identity_layer_json,
+    character.style_layer_json,
+    character.behavior_layer_json,
+    character.anchors_layer_json,
+    character.memory_layer_json,
+    character.state_machine_json,
+    character.rules_layer_json,
+  ].filter(Boolean);
+
+  // Stručná data o systému a projektech
+  const sys = system || {};
+  const cpu = sys.cpu || {};
+  const mem = sys.memory || {};
+  const disk = sys.disk || {};
+  const procs = (sys.processes || []).slice(0, 3).map(p => `${p.cmd} (${p.cpu}%)`).join(", ");
+  const counts = summary?.counts || {};
+
+  // Kontext z minulého reportu (co se změnilo)
+  let prevContext = "";
+  try {
+    const prev = JSON.parse(fs.readFileSync(PAPARAZZI_REPORT_FILE, "utf8"));
+    const prevCounts = prev.summary?.counts || {};
+    const changes = [];
+    if (prevCounts.dirty !== undefined && prevCounts.dirty !== counts.dirty) {
+      changes.push(`dirty working tree: ${prevCounts.dirty} → ${counts.dirty}`);
+    }
+    if (prevCounts.hot !== undefined && prevCounts.hot !== counts.hot) {
+      changes.push(`žhavé projekty: ${prevCounts.hot} → ${counts.hot}`);
+    }
+    if (prev.system?.cpu?.pct !== undefined && prev.system.cpu.pct !== cpu.pct) {
+      changes.push(`CPU: ${prev.system.cpu.pct}% → ${cpu.pct}%`);
+    }
+    if (prev.system?.memory?.pct !== undefined && prev.system.memory.pct !== mem.pct) {
+      changes.push(`RAM: ${prev.system.memory.pct}% → ${mem.pct}%`);
+    }
+    prevContext = changes.length > 0
+      ? `\n## ZMĚNY OD MINULÉHO REPORTU\n${changes.join("\n")}`
+      : "\n## ZMĚNY OD MINULÉHO REPORTU\nŽádné výrazné změny — čísla jsou stejná. Vysvětli, proč se nic nezměnilo (co jsi kontroloval, co to znamená).";
+  } catch {}
+
+  const dataBlock = `
+## AKTUÁLNÍ DATA (reálná, z monitoringu)
+SYSTÉM:
+- CPU: ${cpu.pct || 0}% (load ${cpu.load1 || 0}/${cpu.load5 || 0}, ${cpu.cores || "?"} jader)
+- RAM: ${mem.pct || 0}% využito (${fmtBytes(mem.used)} z ${fmtBytes(mem.total)})
+- Disk: ${disk.pct || 0}% (${disk.used || "?"} / ${disk.total || "?"})
+- Top procesy: ${procs || "žádné"}
+- Uptime: ${sys.uptime || "?"}
+
+PROJEKTY:
+- Celkem: ${counts.total || 0}
+- Žhavé: ${counts.hot || 0}, Aktivní: ${counts.active || 0}, Pomalé: ${counts.slow || 0}, Idle: ${counts.idle || 0}
+- Dirty working tree: ${counts.dirty || 0}
+- Bez README: ${counts.undocumented || 0}
+${prevContext}
+`;
+
+  return `You are ${character.name}. Stay fully in character at all times. Here is your persona stack:\n\n${layers.join("\n\n")}\n\n${dataBlock}\n\nNapiš krátkou zprávu manažerovi (Peterovi) o stavu systému a projektů. Mluv jako Paparazzi — lidsky, ne korporátně. Struktura: 1) Co se děje (stav), 2) Co je problém (pokud je), 3) Co navrhuješ. Když se čísla nezměnily, vysvětli proč. Buď konkrétní a faktický. Max 150 slov.`;
+}
+
+function fmtBytes(bytes) {
+  if (!bytes) return "?";
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1) return gb.toFixed(1) + " GB";
+  const mb = bytes / (1024 * 1024);
+  return mb.toFixed(0) + " MB";
+}
+
+// Endpoint: Manažer Report od Paparazziho
+app.get("/api/paparazzi/report", async (req, res) => {
+  const force = req.query.refresh === "1";
+  const now = Date.now();
+
+  if (!force && paparazziReportCache && now - paparazziReportCacheAt < 60000) {
+    return res.json({ ...paparazziReportCache, cached: true, cachedAt: paparazziReportCacheAt });
+  }
+
+  try {
+    // 1. Sběr dat (systém + projekty)
+    const [system, projects] = await Promise.all([
+      collectSystemData(),
+      (async () => {
+        const dirs = fs.readdirSync(PROJECTS_DIR).filter(d => {
+          if (SKIP_DIRS.test(d)) return false;
+          try { return fs.statSync(path.join(PROJECTS_DIR, d)).isDirectory() && fs.existsSync(path.join(PROJECTS_DIR, d, ".git")); }
+          catch { return false; }
+        });
+        const results = await Promise.allSettled(dirs.map((d) => collectProjectData(d)));
+        return results.filter(r => r.status === "fulfilled" && r.value).map(r => r.value);
+      })(),
+    ]);
+    const summary = summarizeProjects(projects);
+
+    // 2. Získat Paparazzi postavu
+    const character = await getPaparazziCharacter();
+
+    // 3. Sestavit prompt a zavolat InvokeLLM
+    const prompt = buildPaparazziPrompt(character, system, summary);
+    const llmRes = await fetch(`https://base44.app/api/apps/${PERSONAGE_APP_ID}/integration-endpoints/Core/InvokeLLM`, {
+      method: "POST",
+      headers: { "x-api-key": PERSONAGE_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    const report = await llmRes.json();
+
+    const payload = {
+      report: typeof report === "string" ? report : JSON.stringify(report),
+      system,
+      summary,
+      generatedAt: new Date().toISOString(),
+      cached: false,
+    };
+    paparazziReportCache = payload;
+    paparazziReportCacheAt = now;
+    res.json(payload);
+  } catch (err) {
+    console.error("[Paparazzi] Report selhal:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 function shutdown(signal) {
   console.log(`[Sovereign API] Přijat ${signal}, ukončuji...`);
   server.close(() => {

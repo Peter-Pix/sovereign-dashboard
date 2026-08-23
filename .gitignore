@@ -28,3 +28,4 @@ server.pid
 server_debug.log
 test-results/
 playwright-report/
+*.bak
