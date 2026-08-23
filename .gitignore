@@ -29,3 +29,8 @@ server_debug.log
 test-results/
 playwright-report/
 *.bak
+
+# Tajemství — nikdy necommitovat
+.env
+.env.*
+!.env.example

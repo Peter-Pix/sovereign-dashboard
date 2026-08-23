@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { API } from "../config";
+import { API, authHeaders } from "../config";
 import { pipeline as seedPipeline, log as seedLog } from "../data/sovereign-data";
 
 const priorityStyles = {
@@ -27,7 +27,7 @@ export default function Pipeline() {
     const item = items.find((i) => i.id === id);
     const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
     setLog((l) => [{ time: ts, tag: "progress", text: `▶ Spouštím: ${item?.task} (reálná exekuce)` }, ...l]);
-    fetch(`${API}/api/agents/${agent}/run`, { method: "POST" })
+    fetch(`${API}/api/agents/${agent}/run`, { method: "POST", headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });

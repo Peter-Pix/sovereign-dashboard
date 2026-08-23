@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { API } from "../config";
+import { API, authHeaders } from "../config";
 
 export default function Agents() {
   const [agents, setAgents] = useState([]);
@@ -29,7 +29,7 @@ export default function Agents() {
     setRunning((r) => ({ ...r, [name]: true }));
     const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
     setJobLog((l) => [{ time: ts, agent: name, text: "▶ Job spuštěn — agent pracuje (reálná exekuce)..." }, ...l]);
-    fetch(`${API}/api/agents/${encodeURIComponent(name)}/run`, { method: "POST" })
+    fetch(`${API}/api/agents/${encodeURIComponent(name)}/run`, { method: "POST", headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });

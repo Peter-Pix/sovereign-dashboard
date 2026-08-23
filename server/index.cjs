@@ -1,3 +1,30 @@
+// ===== Načtení .env (bez dotenv dependency) =====
+// Node 26 má --env-file, ale pro robustnost (ať už se spouští jakkoliv) načteme .env ručně.
+// .env je gitignored — obsahuje tajemství (API klíče, auth token).
+(function loadEnv() {
+  const fs = require("fs");
+  const path = require("path");
+  // .env je v kořeni projektu (server/ je o úroveň níž), fallback na server/.env
+  const candidates = [path.join(__dirname, "..", ".env"), path.join(__dirname, ".env")];
+  const envPath = candidates.find((p) => fs.existsSync(p));
+  if (!envPath) return;
+  const lines = fs.readFileSync(envPath, "utf8").split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (key && process.env[key] === undefined) {
+      process.env[key] = val;
+    }
+  }
+})();
+
 const express = require("express");
 const cors = require("cors");
 const { execFile } = require("child_process");
@@ -7,10 +34,40 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
-app.use(cors());
+
+// CORS: povolit jen lokální dev origin (ne otevřený wildcard)
+const ALLOWED_ORIGINS = [
+  "http://localhost:3205",
+  "http://127.0.0.1:3205",
+  "http://localhost:8891",
+  "http://127.0.0.1:8891",
+];
+app.use(cors({
+  origin(origin, cb) {
+    // non-browser requests (curl, server-to-server) nemají Origin → povolit
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    // Nevyhazovat chybu (ta by spadla jako uncaughtException) — jen nepovolit CORS.
+    return cb(null, false);
+  },
+}));
 app.use(express.json());
 
 const PORT = 8891;
+
+// Auth token pro mutační endpointy (spouštění agentů, bug tickety).
+// Nastav SOVEREIGN_AUTH_TOKEN v .env; bez něj se použije náhodný (mutace nepůjdou).
+const AUTH_TOKEN = process.env.SOVEREIGN_AUTH_TOKEN || null;
+
+function requireAuth(req, res, next) {
+  if (!AUTH_TOKEN) {
+    return res.status(503).json({ error: "Auth token not configured (SOVEREIGN_AUTH_TOKEN)" });
+  }
+  const provided = req.headers["x-auth-token"] || req.query.token;
+  if (provided !== AUTH_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
 const PROJECTS_DIR = path.resolve(__dirname, "../../");
 const SOVEREIGN_DIR = path.resolve(__dirname, "../../../.openclaw/workspace/sovereign-os");
 const PAPARAZZI_DIR = path.join(process.env.HOME, "Library/Mobile Documents/com~apple~CloudDocs/Paparazzi");
@@ -26,8 +83,15 @@ async function run(cmd, timeoutMs = 4000) {
 }
 
 // Seznam git projektů pod PROJECTS_DIR
+// Validace názvu projektu — brání command injection přes shell (cd "${p}" && ...)
+const SAFE_NAME_RE = /^[A-Za-z0-9._-]+$/;
+function isSafeName(name) {
+  return typeof name === "string" && name.length > 0 && name.length <= 128 && SAFE_NAME_RE.test(name);
+}
+
 function listProjectDirs() {
   return fs.readdirSync(PROJECTS_DIR).filter(d => {
+    if (!isSafeName(d)) return false;
     try { return fs.statSync(path.join(PROJECTS_DIR, d)).isDirectory() && fs.existsSync(path.join(PROJECTS_DIR, d, ".git")); }
     catch { return false; }
   });
@@ -76,6 +140,9 @@ app.get("/api/projects", async (req, res) => {
 // Detail projektu
 app.get("/api/projects/:name", async (req, res) => {
   const { name } = req.params;
+  if (!isSafeName(name)) {
+    return res.status(400).json({ error: "Invalid project name" });
+  }
   const p = path.join(PROJECTS_DIR, name);
   if (!fs.existsSync(p) || !fs.existsSync(path.join(p, ".git"))) {
     return res.status(404).json({ error: "Project not found" });
@@ -362,7 +429,7 @@ function summarizeProjects(projects) {
 }
 
 // Endpoint pro vyvolání snapshotu (vyvolává OpenClaw agenta přes externí volání nebo API)
-app.post("/api/paparazzi/capture", (req, res) => {
+app.post("/api/paparazzi/capture", requireAuth, (req, res) => {
   const { project, url, tag = "AUTO", title = "snapshot" } = req.body;
   if (!url) return res.status(400).json({ error: "URL is required for capture" });
 
@@ -401,10 +468,15 @@ app.get("/api/files", (req, res) => {
   const { p } = req.query;
   if (!p || typeof p !== "string") return res.status(400).json({ error: "p (path) required" });
 
-  // Bezpečnost: povolíme jen soubory uvnitř SOVEREIGN_DIR (workspaces) a PAPARAZZI_DIR
+  // Bezpečnost: povolíme jen soubory uvnitř SOVEREIGN_DIR (workspaces) a PAPARAZZI_DIR.
+  // path.relative() je bezpečnější než startsWith() — nemá prefix bug (sovereign-os vs sovereign-os-evil).
   const abs = path.resolve(p);
   const allowed = [SOVEREIGN_DIR, PAPARAZZI_DIR];
-  if (!allowed.some((root) => abs.startsWith(root + path.sep) || abs === root)) {
+  const inside = allowed.some((root) => {
+    const rel = path.relative(root, abs);
+    return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  });
+  if (!inside) {
     return res.status(403).json({ error: "Path outside allowed roots" });
   }
   if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
@@ -448,7 +520,7 @@ app.get("/api/paparazzi/data", async (req, res) => {
 });
 
 // Bug tickets — vytvoření
-app.post("/api/bugs", (req, res) => {
+app.post("/api/bugs", requireAuth, (req, res) => {
   const { project, title, description, severity } = req.body;
   if (!project || !title) return res.status(400).json({ error: "project and title required" });
 
@@ -471,7 +543,7 @@ app.post("/api/bugs", (req, res) => {
 });
 
 // Bug tickets — update (resolve, close)
-app.patch("/api/bugs/:project/:id", (req, res) => {
+app.patch("/api/bugs/:project/:id", requireAuth, (req, res) => {
   const { project, id } = req.params;
   const bugPath = path.join(PROJECTS_DIR, project, "bugs", `${id}.json`);
   if (!fs.existsSync(bugPath)) return res.status(404).json({ error: "Bug not found" });
@@ -633,7 +705,7 @@ function runAgentExe(agentName, callback) {
 const runningJobs = new Set();
 const MAX_PARALLEL_JOBS = 2;
 
-app.post('/api/agents/:name/run', (req, res) => {
+app.post('/api/agents/:name/run', requireAuth, (req, res) => {
   const { name } = req.params;
   if (!AGENT_TASKS[name]) {
     return res.status(404).json({ error: `Neznámý agent: ${name}` });
@@ -742,9 +814,10 @@ setTimeout(() => {
 // Volá Paparazzi postavu v Personage (Base44) s reálnými daty o systému a projektech.
 // Paparazzi odpoví lidskou zprávou — "Manažer Report".
 
-const PERSONAGE_API_KEY = process.env.PERSONAGE_API_KEY || "REDACTED_API_KEY";
-const PERSONAGE_APP_ID = process.env.PERSONAGE_APP_ID || "69ac913307aa23cc54bd2841";
-const PAPARAZZI_CHAR_ID = process.env.PAPARAZZI_CHAR_ID || "6a823669bb9b7900a5bd72ec";
+// Tajemství se načítají POUZE z env (viz .env, gitignored). Žádné hardcoded fallbacky.
+const PERSONAGE_API_KEY = process.env.PERSONAGE_API_KEY;
+const PERSONAGE_APP_ID = process.env.PERSONAGE_APP_ID;
+const PAPARAZZI_CHAR_ID = process.env.PAPARAZZI_CHAR_ID;
 
 // Cache reportu (60s)
 let paparazziReportCache = null;
@@ -894,8 +967,9 @@ function shutdown(signal) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("uncaughtException", (err) => {
-  console.error("[Sovereign API] Uncaught exception:", err.message);
-  // Nezabíjet proces — logovat a pokračovat (stabilita)
+  console.error("[Sovereign API] Uncaught exception:", err);
+  // Nezabíjet proces tiše — logovat a ukončit (wrapper auto-restartuje).
+  shutdown("uncaughtException");
 });
 process.on("unhandledRejection", (reason) => {
   console.error("[Sovereign API] Unhandled rejection:", reason);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { API } from "../config";
+import { API, authHeaders } from "../config";
 
 export default function ProjectDetail({ projectName, onBack }) {
   const [project, setProject] = useState(null);
@@ -29,7 +29,7 @@ export default function ProjectDetail({ projectName, onBack }) {
     setBugError(null);
     fetch(`${API}/api/bugs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         project: projectName,
         title: bugTitle.trim(),
