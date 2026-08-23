@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { API, cachedFetch } from "../config";
+import Markdown from "./Markdown";
 
 const tagColors = {
   STRUGGLE: "#e85d5d",
@@ -131,9 +132,7 @@ function Overview({ summary, projects, system, report, reportLoading, cached }) 
               </span>
             </div>
           </div>
-          <div className="text-[13px] text-[#d4d4d4] leading-relaxed whitespace-pre-wrap">
-            {report.report}
-          </div>
+          <Markdown text={report.report} />
         </div>
       )}
 
