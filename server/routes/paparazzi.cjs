@@ -44,6 +44,18 @@ module.exports = function registerPaparazzi(app, deps) {
     }
   });
 
+  // --- Historie reportů ---
+  app.get("/api/paparazzi/history", (req, res) => {
+    const historyFile = config.PAPARAZZI_HISTORY_FILE;
+    if (!fs.existsSync(historyFile)) return res.json([]);
+    try {
+      const history = JSON.parse(fs.readFileSync(historyFile, "utf8"));
+      res.json(history);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // --- Streaming Report ---
   app.get("/api/paparazzi/report", async (req, res) => {
     const force = req.query.refresh === "1";

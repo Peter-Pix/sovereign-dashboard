@@ -15,7 +15,7 @@ function isSafeName(name) {
 }
 
 function listProjectDirs() {
-  const { PROJECTS_DIR } = require("./config.cjs");
+  const { PROJECTS_DIR } = require("../config.cjs");
   try {
     return fs.readdirSync(PROJECTS_DIR).filter((d) => {
       if (SKIP_DIRS.test(d)) return false;
@@ -32,7 +32,7 @@ function listProjectDirs() {
 }
 
 async function getProjectInfo(name, options = {}) {
-  const { PROJECTS_DIR } = require("./config.cjs");
+  const { PROJECTS_DIR } = require("../config.cjs");
   const p = path.join(PROJECTS_DIR, name);
   try {
     const stats = fs.statSync(p);
@@ -112,7 +112,7 @@ function summarizeProjects(projects) {
 
 // --- Inkrementální Cache wrapper ---
 async function getProjectsCached() {
-  const { PROJECTS_DIR } = require("./config.cjs");
+  const { PROJECTS_DIR } = require("../config.cjs");
   const rootStats = fs.statSync(PROJECTS_DIR);
   
   if (projectCache.lastMtime === rootStats.mtimeMs) {

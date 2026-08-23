@@ -2,11 +2,12 @@
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
+const SOVEREIGN_DIR = path.resolve(ROOT, "../..", ".openclaw/workspace/sovereign-os");
 
 module.exports = {
   PORT: 8891,
   PROJECTS_DIR: path.resolve(ROOT, ".."),
-  SOVEREIGN_DIR: path.resolve(ROOT, "../..", ".openclaw/workspace/sovereign-os"),
+  SOVEREIGN_DIR,
   PAPARAZZI_DIR: path.join(process.env.HOME, "Library/Mobile Documents/com~apple~CloudDocs/Paparazzi"),
 
   ALLOWED_ORIGINS: [
@@ -28,4 +29,8 @@ module.exports = {
   PAPARAZZI_INTERVAL_MS: 60 * 60 * 1000, // 60 min
   PAPARAZZI_CACHE_TTL_MS: 60 * 1000,     // 60 s
   PAPARAZZI_DATA_TTL_MS: 5 * 60 * 1000,    // 5 min
+
+  PAPARAZZI_REPORT_DIR: path.join(SOVEREIGN_DIR, "reports/paparazzi"),
+  PAPARAZZI_REPORT_FILE: path.join(SOVEREIGN_DIR, "reports/paparazzi", "latest.json"),
+  PAPARAZZI_HISTORY_FILE: path.join(SOVEREIGN_DIR, "reports/paparazzi", "history.json"),
 };

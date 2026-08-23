@@ -1,12 +1,12 @@
 // ===== Paparazzi — LLM integrace a sběr dat =====
 const fs = require("fs");
 const path = require("path");
-const config = require("./config.cjs");
+const config = require("../config.cjs");
 
-const PAPARAZZI_REPORT_DIR = path.join(config.SOVEREIGN_DIR, "reports/paparazzi");
-const PAPARAZZI_REPORT_FILE = path.join(PAPARAZZI_REPORT_DIR, "latest.json");
-const PAPARAZZI_HISTORY_FILE = path.join(PAPARAZZI_REPORT_DIR, "history.json");
-const PAPARAZZI_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const PAPARAZZI_REPORT_DIR = config.PAPARAZZI_REPORT_DIR;
+const PAPARAZZI_REPORT_FILE = config.PAPARAZZI_REPORT_FILE;
+const PAPARAZZI_HISTORY_FILE = config.PAPARAZZI_HISTORY_FILE;
+const PAPARAZZI_INTERVAL_MS = config.PAPARAZZI_INTERVAL_MS;
 
 async function callOllama(prompt, onToken = null) {
   const response = await fetch(config.OLLAMA_URL + "/api/generate", {
@@ -64,7 +64,7 @@ Write the report in Czech. Start with "Yo Peter, tady Paparazzi..."`;
 async function gatherAllData() {
   const { SKIP_DIRS, collectProjectData, summarizeProjects } = require("./projects.cjs");
   const { collectSystemData } = require("./system.cjs");
-  const { PROJECTS_DIR } = require("./config.cjs");
+  const { PROJECTS_DIR } = require("../config.cjs");
 
   const dirs = fs.readdirSync(PROJECTS_DIR).filter((d) => {
     if (SKIP_DIRS.test(d)) return false;
