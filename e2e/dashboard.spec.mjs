@@ -6,7 +6,7 @@ test.describe('Sovereign Dashboard E2E', () => {
   test('1. Dashboard se načte a zobrazí záložky', async ({ page }) => {
     await page.goto(BASE, { waitUntil: 'networkidle' });
     await expect(page.locator('h1')).toContainText('Sovereign Command');
-    for (const tab of ['Pulse', 'Pipeline', 'Leady', 'Agenti', 'Paparazzi', 'Log']) {
+    for (const tab of ['Pulse', 'Pipeline', 'Leady', 'Agenti', 'Paparazzi', 'Roadmapy', 'Log']) {
       await expect(page.locator('button', { hasText: tab }).first()).toBeVisible();
     }
   });
@@ -49,7 +49,10 @@ test.describe('Sovereign Dashboard E2E', () => {
   test('6. Paparazzi záložka načte captures', async ({ page }) => {
     await page.goto(BASE, { waitUntil: 'networkidle' });
     await page.locator('button', { hasText: 'Paparazzi' }).first().click();
-    await page.waitForTimeout(2000);
-    expect((await page.locator('body').innerText()).length).toBeGreaterThan(0);
+    // Počkej na načtení dat (Paparazzi sbírá data... zmizí)
+    await page.waitForFunction(() => !document.body.innerText.includes('Paparazzi sbírá data'), null, { timeout: 15000 });
+    // Ověř, že se zobrazí nějaký obsah (report, summary, nebo captures)
+    const body = await page.locator('body').innerText();
+    expect(body.length).toBeGreaterThan(0);
   });
 });

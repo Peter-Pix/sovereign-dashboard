@@ -27,7 +27,9 @@ test.describe('Paparazzi API', () => {
     // První projekt má správná pole
     const p = body.projects[0];
     expect(p.name).toBeTruthy();
-    expect(p).toHaveProperty('lastCommitDate');
+    expect(p).toHaveProperty('lastHash');
+    expect(p).toHaveProperty('lastMsg');
+    expect(p).toHaveProperty('lastCommitAgo');
     expect(p).toHaveProperty('branch');
     expect(p).toHaveProperty('dirty');
     expect(p).toHaveProperty('activity');
@@ -53,24 +55,19 @@ test.describe('Paparazzi API', () => {
     expect(Array.isArray(body)).toBe(true);
   });
 
-  test('5. /api/paparazzi/report vrací Manažer Report + system data', async ({ request }) => {
+  test('5. /api/paparazzi/report vrací SSE stream (Manažer Report)', async ({ request }) => {
     test.setTimeout(90000); // report generuje LLM text, může trvat
 
     const res = await request.get(`${API}/api/paparazzi/report`);
     expect(res.status()).toBe(200);
-    const body = await res.json();
 
-    // Report — lidsky psaný text
-    expect(body.report).toBeTruthy();
-    expect(typeof body.report).toBe('string');
-    expect(body.report.length).toBeGreaterThan(50);
+    // Report je nyní SSE stream (text/event-stream), ne JSON
+    const contentType = res.headers()['content-type'] || '';
+    expect(contentType).toContain('text/event-stream');
 
-    // System data — CPU/RAM/disk/procesy
-    expect(body.system).toBeTruthy();
-    expect(body.system).toHaveProperty('cpu');
-    expect(body.system).toHaveProperty('memory');
-    expect(body.system).toHaveProperty('disk');
-    expect(body.system).toHaveProperty('uptime');
+    // Přečti stream a ověř, že obsahuje data
+    const text = await res.text();
+    expect(text).toContain('data:');
   });
 
   test('6. /api/projects vrací seznam projektů', async ({ request }) => {

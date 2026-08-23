@@ -130,14 +130,14 @@ export default function ProjectCard({ p, onAddBug }) {
         </button>
       </form>
 
-      {p.todos.length > 0 && (
+      {(p.todos || []).length > 0 && (
         <div className="text-[10px] text-[#5c5c5c] space-y-0.5 mt-3">
-          {p.todos.slice(0, 2).map((t, i) => (
+          {(p.todos || []).slice(0, 2).map((t, i) => (
             <p key={i} className="truncate" title={t.text}>
               <span className="text-[#e5b34b]">▸</span> {t.file}:{t.line} {t.text}
             </p>
           ))}
-          {p.todos.length > 2 && <p>…a další {p.todos.length - 2}</p>}
+          {(p.todos || []).length > 2 && <p>…a další {(p.todos || []).length - 2}</p>}
         </div>
       )}
     </div>

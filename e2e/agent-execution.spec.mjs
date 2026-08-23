@@ -7,7 +7,7 @@ const BASE = 'http://localhost:3205';
 // a ověří, že se job dokončí (reálná exekuce přes OpenClaw agenta).
 // POZOR: exekuce může trvat až 5 minut (cloud model).
 
-test.describe('Reálná exekuce agenta', () => {
+test.describe('Reálná exekuce agenta @slow', () => {
   test('Spustí archivista a ověří dokončení jobu', async ({ page }) => {
     test.setTimeout(360000); // 6 min timeout (exekuce má 5 min limit)
 
