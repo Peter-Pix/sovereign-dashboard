@@ -11,7 +11,7 @@ let projectCache = {
 };
 
 function isSafeName(name) {
-  return typeof name === "string" && /^[a-zA-Z0-9_-]+$/.test(name);
+  return typeof name === "string" && /^[A-Za-z0-9._-]+$/.test(name);
 }
 
 function listProjectDirs() {
