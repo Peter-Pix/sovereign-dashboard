@@ -160,3 +160,28 @@ test("GET /api/roadmaps/:project s invalid name → 400", async () => {
   const res = await fetch(`${BASE}/api/roadmaps/foo;rm%20-rf%20/`);
   assert.strictEqual(res.status, 400);
 });
+
+test("GET /api/executor/state vrací stav", async () => {
+  const res = await fetch(`${BASE}/api/executor/state`);
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.ok(typeof body.totalExecutions === "number");
+  assert.ok(typeof body.maxTotal === "number");
+});
+
+test("GET /api/executor/next/:project vrací task nebo done", async () => {
+  const res = await fetch(`${BASE}/api/executor/next/okeye`);
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.ok("done" in body);
+});
+
+test("POST /api/executor/run/:project bez auth → 401", async () => {
+  const res = await fetch(`${BASE}/api/executor/run/okeye`, { method: "POST" });
+  assert.strictEqual(res.status, 401);
+});
+
+test("POST /api/executor/reset bez auth → 401", async () => {
+  const res = await fetch(`${BASE}/api/executor/reset`, { method: "POST" });
+  assert.strictEqual(res.status, 401);
+});

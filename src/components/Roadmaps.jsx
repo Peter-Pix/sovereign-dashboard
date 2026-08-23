@@ -1,4 +1,4 @@
-// Roadmapy — přehled roadmap napříč projekty.
+// Roadmapy — přehled roadmap napříč projekty + autonomní exekuce.
 import { useState, useEffect } from "react";
 import { API } from "../config";
 
@@ -41,8 +41,11 @@ function RoadmapDetail({ project, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [nextTask, setNextTask] = useState(null);
+  const [executing, setExecuting] = useState(false);
+  const [execResult, setExecResult] = useState(null);
 
-  useEffect(() => {
+  const loadDetail = () => {
     fetch(`${API}/api/roadmaps/${project}`)
       .then((r) => r.json())
       .then((d) => {
@@ -53,7 +56,49 @@ function RoadmapDetail({ project, onBack }) {
         setError(e.message);
         setLoading(false);
       });
+  };
+
+  const loadNext = () => {
+    fetch(`${API}/api/executor/next/${project}`)
+      .then((r) => r.json())
+      .then((d) => setNextTask(d))
+      .catch(() => setNextTask(null));
+  };
+
+  useEffect(() => {
+    fetch(`${API}/api/roadmaps/${project}`)
+      .then((r) => r.json())
+      .then((d) => { setData(d); setLoading(false); })
+      .catch((e) => { setError(e.message); setLoading(false); });
+    fetch(`${API}/api/executor/next/${project}`)
+      .then((r) => r.json())
+      .then((d) => setNextTask(d))
+      .catch(() => setNextTask(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
+
+  const runNextTask = async () => {
+    setExecuting(true);
+    setExecResult(null);
+    try {
+      const res = await fetch(`${API}/api/executor/run/${project}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-auth-token": import.meta.env.VITE_AUTH_TOKEN,
+        },
+      });
+      const d = await res.json();
+      setExecResult(d);
+      // Po dokončení znovu načti detail + next task
+      loadDetail();
+      loadNext();
+    } catch {
+      setExecResult({ error: "Síťová chyba" });
+    } finally {
+      setExecuting(false);
+    }
+  };
 
   if (loading) return <p className="text-[#5c5c5c]">Načítám roadmapu...</p>;
   if (error) return <p className="text-[#e85d5d]">Chyba: {error}</p>;
@@ -64,6 +109,42 @@ function RoadmapDetail({ project, onBack }) {
       <button onClick={onBack} className="text-xs text-[#C89B3C] hover:text-[#8f6f26] transition-colors">
         ← Zpět na přehled
       </button>
+
+      {/* Autonomní exekuce */}
+      <div className="bg-[#0d0d0d] border border-[#C89B3C]/30 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">
+            🤖 Autonomní exekuce
+          </h3>
+        </div>
+        {nextTask && !nextTask.done ? (
+          <div className="space-y-2">
+            <p className="text-[11px] text-[#9d9d9d]">
+              Další task: <span className="text-[#e8e8e8]">"{nextTask.task}"</span>
+            </p>
+            <p className="text-[10px] text-[#5c5c5c]">
+              Agent: <span className="text-[#C89B3C]">{nextTask.agent}</span> · Fáze: {nextTask.phase}
+            </p>
+            <button
+              onClick={runNextTask}
+              disabled={executing}
+              className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-50 transition-colors"
+            >
+              {executing ? "⏳ Agent pracuje..." : "▶ Spustit agenta na tento task"}
+            </button>
+          </div>
+        ) : (
+          <p className="text-[11px] text-[#3ecf8e]">✅ Všechny tasky hotové</p>
+        )}
+
+        {execResult && (
+          <div className={`mt-3 p-3 rounded-md text-[11px] ${execResult.success ? "bg-[rgba(62,207,142,0.1)] text-[#3ecf8e]" : "bg-[rgba(232,93,93,0.1)] text-[#e85d5d]"}`}>
+            {execResult.success
+              ? `✅ Task dokončen: "${execResult.task}" (agent: ${execResult.agent})`
+              : `❌ Chyba: ${execResult.error || "Neznámá chyba"}`}
+          </div>
+        )}
+      </div>
 
       {data.roadmaps.map((rm, i) => (
         <div key={i} className="bg-[#111] border border-[#232323] rounded-xl p-4">

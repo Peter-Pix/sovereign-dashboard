@@ -106,3 +106,30 @@ test("isRoadmapFile: rozpozná roadmap soubory", () => {
   assert.strictEqual(isRoadmapFile("README.md"), false);
   assert.strictEqual(isRoadmapFile("index.js"), false);
 });
+
+// ===== Executor (loop protection) =====
+const { routeTaskToAgent, LIMITS, getExecutionState, resetExecutionState } = require("../server/lib/executor.cjs");
+
+test("routeTaskToAgent: routuje podle klíčových slov", () => {
+  assert.strictEqual(routeTaskToAgent("Audit projektu"), "archivist");
+  assert.strictEqual(routeTaskToAgent("Najdi nové leady"), "scout");
+  assert.strictEqual(routeTaskToAgent("Vytvoř pitch"), "strategist");
+  assert.strictEqual(routeTaskToAgent("Zkontroluj status"), "spine");
+  assert.strictEqual(routeTaskToAgent("Neznámý úkol"), "archivist"); // default
+});
+
+test("LIMITS: má ochranné limity", () => {
+  assert.ok(LIMITS.MAX_TASKS_PER_RUN > 0);
+  assert.ok(LIMITS.MAX_TOTAL_EXECUTIONS > 0);
+  assert.ok(LIMITS.MAX_RETRIES_PER_TASK >= 0);
+  assert.ok(LIMITS.COOLDOWN_MS > 0);
+  assert.ok(LIMITS.AGENT_TIMEOUT_MS > 0);
+});
+
+test("getExecutionState: vrací stav s budgetem", () => {
+  resetExecutionState();
+  const state = getExecutionState();
+  assert.strictEqual(state.totalExecutions, 0);
+  assert.strictEqual(state.maxTotal, LIMITS.MAX_TOTAL_EXECUTIONS);
+  assert.strictEqual(state.stuckTasks, 0);
+});
