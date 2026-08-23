@@ -82,8 +82,30 @@ async function callOllama(prompt) {
 module.exports = {
   buildPaparazziPrompt,
   callOllama,
+  gatherAllData,
   PAPARAZZI_REPORT_DIR,
   PAPARAZZI_REPORT_FILE,
   PAPARAZZI_HISTORY_FILE,
   PAPARAZZI_INTERVAL_MS,
 };
+
+// ===== Sdílený sběr dat (projekty + systém) =====
+// Používá ho jak report route, tak background task. Definováno zde, protože
+// kombinuje projektová data (projects.cjs) a systémový monitoring (system.cjs).
+async function gatherAllData() {
+  const fs = require("fs");
+  const path = require("path");
+  const { SKIP_DIRS, collectProjectData, summarizeProjects } = require("./projects.cjs");
+  const { collectSystemData } = require("./system.cjs");
+
+  const dirs = fs.readdirSync(config.PROJECTS_DIR).filter((d) => {
+    if (SKIP_DIRS.test(d)) return false;
+    try { return fs.statSync(path.join(config.PROJECTS_DIR, d)).isDirectory() && fs.existsSync(path.join(config.PROJECTS_DIR, d, ".git")); }
+    catch { return false; }
+  });
+  const results = await Promise.allSettled(dirs.map((d) => collectProjectData(d)));
+  const projects = results.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value);
+  const summary = summarizeProjects(projects);
+  const system = await collectSystemData();
+  return { projects, summary, system };
+}
