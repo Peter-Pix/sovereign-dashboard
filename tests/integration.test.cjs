@@ -143,3 +143,20 @@ test("POST /api/projects/:name/run-agent s neznámým agentem → 404 (s auth)",
   });
   assert.strictEqual(res.status, 404);
 });
+
+test("GET /api/roadmaps vrací pole roadmap", async () => {
+  const res = await fetch(`${BASE}/api/roadmaps`);
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.ok(Array.isArray(body));
+  if (body.length > 0) {
+    assert.ok(body[0].project);
+    assert.ok(body[0].file);
+    assert.ok(typeof body[0].progress === "number");
+  }
+});
+
+test("GET /api/roadmaps/:project s invalid name → 400", async () => {
+  const res = await fetch(`${BASE}/api/roadmaps/foo;rm%20-rf%20/`);
+  assert.strictEqual(res.status, 400);
+});

@@ -67,3 +67,42 @@ test("buildPaparazziPrompt: obsahuje klíčové části", () => {
   assert.ok(prompt.includes("Yo Peter"));
   assert.ok(prompt.includes("test")); // hostname je v JSON
 });
+
+// ===== Roadmapy =====
+const { parseRoadmap, isRoadmapFile } = require("../server/lib/roadmaps.cjs");
+
+test("parseRoadmap: parsuje fáze a checklisty", () => {
+  const md = `# Roadmap
+
+## Fáze 1 — Základ
+- [x] Hotový úkol
+- [ ] Nehotový úkol
+
+## Fáze 2 — Pokročilé
+- [ ] Další úkol
+`;
+  const result = parseRoadmap(md);
+  assert.strictEqual(result.totalCheckboxes, 3);
+  assert.strictEqual(result.doneCheckboxes, 1);
+  assert.strictEqual(result.progress, 33);
+  assert.strictEqual(result.phases.length, 2);
+  assert.strictEqual(result.phases[0].title, "Fáze 1 — Základ");
+  assert.strictEqual(result.phases[0].done, 1);
+  assert.strictEqual(result.phases[0].total, 2);
+});
+
+test("parseRoadmap: bez checklistů → 0", () => {
+  const md = `# Jen nadpis\n\nNějaký text bez checklistů.`;
+  const result = parseRoadmap(md);
+  assert.strictEqual(result.totalCheckboxes, 0);
+  assert.strictEqual(result.progress, 0);
+});
+
+test("isRoadmapFile: rozpozná roadmap soubory", () => {
+  assert.strictEqual(isRoadmapFile("ROADMAP.md"), true);
+  assert.strictEqual(isRoadmapFile("roadmap-v2.md"), true);
+  assert.strictEqual(isRoadmapFile("MASTER-PLAN.md"), true);
+  assert.strictEqual(isRoadmapFile("BUILD-PLAN.md"), true);
+  assert.strictEqual(isRoadmapFile("README.md"), false);
+  assert.strictEqual(isRoadmapFile("index.js"), false);
+});

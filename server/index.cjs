@@ -35,6 +35,7 @@ const { collectSystemData } = require("./lib/system.cjs");
 const { buildPaparazziPrompt, callOllama, gatherAllData, PAPARAZZI_REPORT_DIR, PAPARAZZI_REPORT_FILE, PAPARAZZI_HISTORY_FILE } = require("./lib/paparazzi.cjs");
 const { AGENT_TASKS, runAgentExe } = require("./lib/agents.cjs");
 const { SKIP_DIRS, collectProjectData, summarizeProjects } = require("./lib/projects.cjs");
+const { collectRoadmaps } = require("./lib/roadmaps.cjs");
 
 const app = express();
 
@@ -57,7 +58,7 @@ function requireAuth(req, res, next) {
 }
 
 // ===== Sdílené dependency pro routes =====
-const deps = { config, requireAuth, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, getProjectsCached, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe };
+const deps = { config, requireAuth, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, getProjectsCached, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe, collectRoadmaps };
 
 // ===== Registrace routes =====
 require("./routes/projects.cjs")(app, deps);
@@ -67,6 +68,7 @@ require("./routes/files.cjs")(app, deps);
 require("./routes/leads.cjs")(app, deps);
 require("./routes/health.cjs")(app, deps);
 require("./routes/paparazzi.cjs")(app, deps);
+require("./routes/roadmaps.cjs")(app, deps);
 
 // ===== Paparazzi — automatický běh v pozadí =====
 async function generatePaparazziReport() {

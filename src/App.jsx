@@ -6,6 +6,7 @@ import Agents from "./components/Agents";
 import ProjectDetail from "./components/ProjectDetail";
 import Paparazzi from "./components/Paparazzi";
 import Leads from "./components/Leads";
+import Roadmaps from "./components/Roadmaps";
 
 const tabs = [
   { id: "pulse", label: "Pulse" },
@@ -13,6 +14,7 @@ const tabs = [
   { id: "leads", label: "Leady" },
   { id: "agents", label: "Agenti" },
   { id: "paparazzi", label: "Paparazzi" },
+  { id: "roadmaps", label: "Roadmapy" },
   { id: "log", label: "Log" },
 ];
 
@@ -93,6 +95,7 @@ function App() {
             {activeTab === "leads" && <Leads />}
             {activeTab === "agents" && <Agents />}
             {activeTab === "paparazzi" && <Paparazzi />}
+            {activeTab === "roadmaps" && <Roadmaps />}
             {activeTab === "log" && <Log />}
           </>
         )}
