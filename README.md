@@ -1,89 +1,146 @@
 # Sovereign Command Center
 
-A dark, minimal operational dashboard for the Sovereign OS. It gives a real-time pulse over local Git projects, an agent pipeline, logs, and Paparazzi captures.
+Dark, minimalistický operační dashboard pro **Sovereign OS** — centrální nervový systém, který nahrazuje roztroušené terminálové kontroly jediným command centerem.
 
-## What this project is
+## Co to je
 
-Sovereign Dashboard is the central nervous system of the Sovereign OS workspace. It replaces scattered terminal checks with a single command center where you can:
+Sovereign Dashboard dává real-time přehled nad lokálními Git projekty, agentním pipeline, logy, Paparazzi captures, roadmapami a **autonomní exekucí tasků**. Uzavírá kruh autonomního systému:
 
-- **Pulse** — see every Git project under `~/projects`, its last commit, branch, dirty state, and latest message.
-- **Pipeline** — view queued tasks and priorities, and trigger real agent execution.
-- **Leady** — browse leads collected by the Scout agent (sector stats + filtering).
-- **Agents** — inspect manifest and log output from each Sovereign workspace agent.
-- **Log** — read the running operational log of milestones, victories, and struggles.
-- **Paparazzi** — data collector: prohlíží captures (fotky) + sbírá reálná data o projektech (git, aktivita, health, TODO) a sumarizuje je. Podrobnosti: `PAPARAZZI.md`.
-- **Project detail** — drill into a single project for its recent Git history and stored bug tickets.
-
-The frontend is a React + Vite + Tailwind CSS single-page app. The backend is a small Express API that reads the local filesystem and Git state.
-
-## How to run it
-
-Install dependencies once:
-
-```bash
-npm install
+```
+ROADMAP.md (task [ ])  →  Executor vybere agenta  →  Agent dokončí task  →  [x] odškrtnuto
 ```
 
-Start the frontend dev server and API together:
+## Záložky
+
+| Záložka | Popis |
+|---------|-------|
+| **Pulse** | Všechny Git projekty pod `~/projects` — poslední commit, branch, dirty stav, health |
+| **Pipeline** | Fronta tasků a priority + spouštění reálné agentní exekuce |
+| **Leady** | Leady sesbírané Scout agentem (sektorové statistiky + filtrování) |
+| **Agenti** | Manifesty a logy jednotlivých Sovereign agentů |
+| **Paparazzi** | Data collector: captures (fotky) + reálná data o projektech + Manažer Report (LLM) |
+| **Roadmapy** | Roadmapy projektů (čtené z `ROADMAP.md`/`PLAN.md`) + autonomní exekuce tasků |
+| **Log** | Operační log milníků, vítězství a zápasů |
+
+## Stack
+
+- **Frontend:** React 19 + Vite + Tailwind CSS 4 (SPA)
+- **Backend:** Express 5 (Node.js, CommonJS `.cjs`)
+- **LLM:** Ollama (cloud modely, default `minimax-m3:cloud`)
+- **Testy:** Node built-in `node:test` (unit + integration) + Playwright (e2e)
+
+## Jak to spustit
 
 ```bash
-npm run dev
+npm install          # jednou
+npm run dev          # frontend (3205) + backend (8891) dohromady
 ```
 
-The UI will be available at http://localhost:3205.
+- **UI:** http://localhost:3205
+- **API:** http://localhost:8891
 
-The API server (started by `npm run dev`, or standalone):
+Samostatně:
 
 ```bash
-node server/index.cjs
+npm run server       # jen backend (node server/index.cjs)
+npm run dev:frontend # jen frontend (vite --port 3205)
 ```
 
-The API listens on http://localhost:8891.
+## Konfigurace
 
-## Architecture
+Vytvoř `.env` ze šablony (NIKDY necommitovat `.env`):
+
+```bash
+cp .env.example .env
+# vygeneruj token: openssl rand -hex 32
+```
+
+| Proměnná | Popis | Default |
+|----------|-------|---------|
+| `SOVEREIGN_AUTH_TOKEN` | Auth token pro mutační endpointy | — (povinné) |
+| `VITE_AUTH_TOKEN` | Stejný token pro frontend | — |
+| `OLLAMA_URL` | Ollama API URL | `http://localhost:11434` |
+| `OLLAMA_MODEL` | LLM model pro reporty | `minimax-m3:cloud` |
+
+## Architektura
 
 ```
 sovereign-dashboard/
-├── index.html              # Vite entry point
-├── vite.config.js          # React + Tailwind Vite plugins
-├── package.json            # Vite dev/build scripts, React 19, Express, Tailwind 4
 ├── server/
-│   └── index.cjs           # Express API on port 8891
-└── src/
-    ├── App.jsx             # Tab shell, project detail routing, clock, header/footer
-    ├── main.jsx            # React root
-    ├── config.js           # Single source of truth for the API base URL
-    ├── components/
-    │   ├── Pulse.jsx       # Live Git project grid (calls /api/projects)
-    │   ├── Pipeline.jsx    # Task pipeline + real agent execution
-    │   ├── Leads.jsx       # Scout leads browser (sector stats + filter)
-    │   ├── Agents.jsx      # Agent workspace viewer
-    │   ├── Log.jsx         # Sovereign log view
-    │   ├── Paparazzi.jsx   # Data collector overview + captures
-    │   └── ProjectDetail.jsx # Project detail + bugs
-    ├── data/
-    │   └── sovereign-data.js # Static seed data for Pipeline and Log
-    └── assets/             # Images and icons
+│   ├── index.cjs           # Bootstrap (126 řádků) — lepidlo, žádná logika
+│   ├── config.cjs          # Konfigurace (porty, cesty, limity, LLM)
+│   ├── lib/                # Business logika (čisté funkce + orchestrace)
+│   │   ├── projects.cjs    # Sběr dat o Git projektech + cache
+│   │   ├── system.cjs      # Systémový monitoring (CPU/RAM/disk)
+│   │   ├── paparazzi.cjs   # LLM integrace + sběr dat + prompt
+│   │   ├── agents.cjs      # Definice agentů + exekuce přes OpenClaw
+│   │   ├── roadmaps.cjs    # Parsování ROADMAP.md/PLAN.md
+│   │   ├── executor.cjs    # Autonomní dokončování tasků + loop protection
+│   │   └── runner.cjs      # (legacy) runner
+│   └── routes/             # Express routes (register(app, deps) vzor)
+│       ├── projects.cjs    # /api/projects
+│       ├── agents.cjs      # /api/agents + run-agent
+│       ├── bugs.cjs        # /api/bugs
+│       ├── files.cjs       # /api/files (dir listing)
+│       ├── leads.cjs       # /api/leads
+│       ├── paparazzi.cjs   # /api/paparazzi/*
+│       ├── roadmaps.cjs    # /api/roadmaps
+│       ├── executor.cjs    # /api/executor/*
+│       └── health.cjs      # /health
+├── src/
+│   ├── App.jsx             # Tab shell + routing + clock
+│   ├── config.js           # API base URL + auth + client cache
+│   └── components/
+│       ├── Pulse.jsx       # Git projekt grid
+│       ├── Pipeline.jsx    # Task pipeline + exekuce
+│       ├── Leads.jsx       # Scout leady
+│       ├── Agents.jsx      # Agent workspace viewer
+│       ├── Paparazzi.jsx   # Orchestrátor (96 řádků)
+│       ├── Roadmaps.jsx    # Roadmapy + autonomní exekuce
+│       ├── Log.jsx         # Operační log
+│       ├── ProjectDetail.jsx
+│       └── paparazzi/      # Subkomponenty Paparazzi
+│           ├── Overview.jsx    # Report + summary + systém + karty
+│           ├── Captures.jsx    # Foto view + filtr
+│           ├── ProjectCard.jsx # Karta projektu + Action Center
+│           ├── History.jsx     # Historie reportů
+│           ├── SystemGauge.jsx # CPU/RAM/disk gauge
+│           ├── Stat.jsx        # Stat + MiniStat
+│           └── constants.js    # Sdílené konstanty
+├── tests/                  # Unit + integration testy (node:test)
+│   ├── unit.test.cjs       # 12 testů čistých funkcí
+│   └── integration.test.cjs # 17 testů API endpointů
+└── e2e/                    # Playwright e2e testy (25 testů)
 ```
 
-### API surface
+## Testy
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/projects` | List all Git projects under `~/projects` |
-| GET | `/api/projects/:name` | Project detail with last 10 commits and bugs |
-| GET | `/api/agents` | List Sovereign agent workspaces and logs |
-| GET | `/api/leads` | List Scout leads (deduplicated across source files) |
-| GET | `/api/paparazzi` | List Paparazzi captures from iCloud |
-| GET | `/api/paparazzi/data` | Data collection: reálná data o projektech + shrnutí (cache 60s, `?refresh=1` vynutí) |
-| POST | `/api/paparazzi/capture` | Trigger a Paparazzi snapshot request |
-| POST | `/api/agents/:name/run` | Execute a Sovereign agent via OpenClaw |
-| POST | `/api/bugs` | Create a bug ticket in a project |
-| PATCH | `/api/bugs/:project/:id` | Update bug status |
+```bash
+npm run test:unit         # 12 unit testů (čisté funkce)
+npm run test:integration  # 17 integration testů (API endpointy)
+npm run test:all          # unit + integration dohromady
+npm run test:e2e          # 24 e2e testů (Playwright, bez @slow)
+npm run test:e2e:slow     # pomalé testy (reálná exekuce agenta)
+```
 
-### Notes
+**Celkem 54 testů** na 3 vrstvách (unit → integration → e2e).
 
-- The frontend expects the API at `http://localhost:8891` (configurable via `VITE_API_URL` in `src/config.js`). CORS is enabled.
-- Project status is derived from `git status --short` (`ok` = clean, `warn` = dirty).
-- Bug tickets are stored as JSON files under each project's `bugs/` directory.
-- Paparazzi captures are read from `~/Library/Mobile Documents/com~apple~CloudDocs/Paparazzi`.
+## Klíčové vlastnosti
+
+- **Inkrementální cache** — `/api/projects` <1ms (mtime-based)
+- **SSE streaming** — Manažer Report se vypisuje token po tokenu
+- **Loop protection** — Executor má retry limit, stuck detection, budget a cooldown
+- **Optimistické UI** — bugy se přidávají instantně
+- **Action Center** — spuštění agenta + VS Code deep link přímo z karty projektu
+
+## Dokumentace
+
+- **API reference:** viz [API.md](./API.md)
+- **Paparazzi:** viz `PAPARAZZI.md` (pokud existuje)
+
+## Poznámky
+
+- Frontend očekává API na `http://localhost:8891` (override přes `VITE_API_URL`)
+- Bug tickety se ukládají jako JSON do `bugs/` adresáře projektu
+- Roadmapy se čtou přímo z `ROADMAP.md`/`PLAN.md` v každém repu (single source of truth)
+- Paparazzi captures se čtou z `~/Library/Mobile Documents/com~apple~CloudDocs/Paparazzi`
