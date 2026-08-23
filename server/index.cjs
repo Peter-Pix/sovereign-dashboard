@@ -479,9 +479,29 @@ app.get("/api/files", (req, res) => {
   if (!inside) {
     return res.status(403).json({ error: "Path outside allowed roots" });
   }
-  if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+  if (!fs.existsSync(abs)) {
     return res.status(404).json({ error: "File not found" });
   }
+
+  const stat = fs.statSync(abs);
+
+  // Adresář → vrátit JSON index (seznam souborů), ať "Workspace ↗" link funguje.
+  if (stat.isDirectory()) {
+    const entries = fs.readdirSync(abs, { withFileTypes: true })
+      .filter((e) => !e.name.startsWith(".")) // skrýt dotfiles
+      .map((e) => ({
+        name: e.name,
+        type: e.isDirectory() ? "dir" : "file",
+        size: e.isFile() ? fs.statSync(path.join(abs, e.name)).size : null,
+      }))
+      .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1));
+    return res.json({ path: abs, type: "directory", entries });
+  }
+
+  if (!stat.isFile()) {
+    return res.status(404).json({ error: "Not a regular file" });
+  }
+
   // dotfiles: "allow" — jinak send modul 404 na skryté adresáře (.openclaw)
   res.sendFile(abs, { dotfiles: "allow" });
 });
