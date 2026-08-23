@@ -607,7 +607,7 @@ app.get('/api/leads', (req, res) => {
 // Mapování Sovereign agenta → exekuční prompt pro OpenClaw agenta (main)
 // Agent má přístup k souborům a gitu → reálně vykoná úkol a zapíše manifest.
 const EXEC_AGENT = process.env.SOVEREIGN_EXEC_AGENT || 'main';
-const SOVEREIGN_EXEC_MODEL = process.env.SOVEREIGN_EXEC_MODEL || 'ollama/kimi-k2.7-code:cloud';
+const SOVEREIGN_EXEC_MODEL = process.env.SOVEREIGN_EXEC_MODEL || 'ollama/minimax-m3:cloud';
 
 const AGENT_TASKS = {
   scout: {
