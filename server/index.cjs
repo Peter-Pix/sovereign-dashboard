@@ -765,14 +765,8 @@ async function generatePaparazziReport() {
     ]);
     const summary = summarizeProjects(projects);
 
-    const character = await getPaparazziCharacter();
-    const prompt = buildPaparazziPrompt(character, system, summary);
-    const llmRes = await fetch(`https://base44.app/api/apps/${PERSONAGE_APP_ID}/integration-endpoints/Core/InvokeLLM`, {
-      method: "POST",
-      headers: { "x-api-key": PERSONAGE_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-    const report = await llmRes.json();
+    const prompt = buildPaparazziPrompt(system, summary);
+    const report = await callOllama(prompt);
 
     const payload = {
       report: typeof report === "string" ? report : JSON.stringify(report),
@@ -810,38 +804,27 @@ setTimeout(() => {
   generatePaparazziReport();
 }, 30000);
 
-// ========== PAPARAZZI — MANAŽER REPORT (Personage integrace) ==========
-// Volá Paparazzi postavu v Personage (Base44) s reálnými daty o systému a projektech.
+// ========== PAPARAZZI — MANAŽER REPORT (Ollama) ==========
+// Volá Ollama (lokální server :11434, cloud model) s reálnými daty o systému a projektech.
 // Paparazzi odpoví lidskou zprávou — "Manažer Report".
 
 // Tajemství se načítají POUZE z env (viz .env, gitignored). Žádné hardcoded fallbacky.
-const PERSONAGE_API_KEY = process.env.PERSONAGE_API_KEY;
-const PERSONAGE_APP_ID = process.env.PERSONAGE_APP_ID;
-const PAPARAZZI_CHAR_ID = process.env.PAPARAZZI_CHAR_ID;
+// ===== OLLAMA — LLM pro Paparazzi report =====
+// Ollama (lokální server :11434, cloud modely). Žádné API klíče, žádná externí závislost.
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "kimi-k2.7-code:cloud";
 
 // Cache reportu (60s)
 let paparazziReportCache = null;
 let paparazziReportCacheAt = 0;
 
-async function getPaparazziCharacter() {
-  const res = await fetch(`https://personage.base44.app/functions/apiCharacter?id=${PAPARAZZI_CHAR_ID}`, {
-    headers: { "x-api-key": PERSONAGE_API_KEY },
-  });
-  const data = await res.json();
-  return data.character;
-}
+// Paparazzi persona — natvrdo definovaná.
+// Drzý, přímý, inteligentní — mluví jako rapper, ne korporát.
+const PAPARAZZI_PERSONA = `Jsi Paparazzi — "The Big Eye" Sovereign OS. Sběráš data o systému a projektech a reportuješ manažerovi (Peterovi).
 
-function buildPaparazziPrompt(character, system, summary) {
-  const layers = [
-    character.identity_layer_json,
-    character.style_layer_json,
-    character.behavior_layer_json,
-    character.anchors_layer_json,
-    character.memory_layer_json,
-    character.state_machine_json,
-    character.rules_layer_json,
-  ].filter(Boolean);
+Tvůj hlas: přímý, drzý, ale inteligentní. Mluvíš jako rapper, ne jako korporát. Krátké, jasné věty. Bez zbytečného balastu. Sebevědomý, občas sarkastický, ale vždy faktický. Žádný corporate jargon, žádné "synergie" a "best practices".`;
 
+function buildPaparazziPrompt(system, summary) {
   // Stručná data o systému a projektech
   const sys = system || {};
   const cpu = sys.cpu || {};
@@ -890,7 +873,21 @@ PROJEKTY:
 ${prevContext}
 `;
 
-  return `You are ${character.name}. Stay fully in character at all times. Here is your persona stack:\n\n${layers.join("\n\n")}\n\n${dataBlock}\n\nNapiš krátkou zprávu manažerovi (Peterovi) o stavu systému a projektů. Mluv jako Paparazzi — lidsky, ne korporátně. Struktura: 1) Co se děje (stav), 2) Co je problém (pokud je), 3) Co navrhuješ. Když se čísla nezměnily, vysvětli proč. Buď konkrétní a faktický. Max 150 slov.`;
+  return `${PAPARAZZI_PERSONA}\n\n${dataBlock}\n\nNapiš krátkou zprávu manažerovi (Peterovi) o stavu systému a projektů. Mluv jako Paparazzi — lidsky, ne korporátně. Struktura: 1) Co se děje (stav), 2) Co je problém (pokud je), 3) Co navrhuješ. Když se čísla nezměnily, vysvětli proč. Buď konkrétní a faktický. Max 150 slov.`;
+}
+
+// Volá Ollama (lokální server :11434) — cloud model přes lokální API.
+async function callOllama(prompt) {
+  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false }),
+  });
+  if (!res.ok) {
+    throw new Error(`Ollama HTTP ${res.status}: ${await res.text()}`);
+  }
+  const data = await res.json();
+  return data.response || "";
 }
 
 function fmtBytes(bytes) {
@@ -926,17 +923,9 @@ app.get("/api/paparazzi/report", async (req, res) => {
     ]);
     const summary = summarizeProjects(projects);
 
-    // 2. Získat Paparazzi postavu
-    const character = await getPaparazziCharacter();
-
-    // 3. Sestavit prompt a zavolat InvokeLLM
-    const prompt = buildPaparazziPrompt(character, system, summary);
-    const llmRes = await fetch(`https://base44.app/api/apps/${PERSONAGE_APP_ID}/integration-endpoints/Core/InvokeLLM`, {
-      method: "POST",
-      headers: { "x-api-key": PERSONAGE_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-    const report = await llmRes.json();
+    // 2. Sestavit prompt a zavolat Ollama
+    const prompt = buildPaparazziPrompt(system, summary);
+    const report = await callOllama(prompt);
 
     const payload = {
       report: typeof report === "string" ? report : JSON.stringify(report),
