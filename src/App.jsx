@@ -7,6 +7,7 @@ import ProjectDetail from "./components/ProjectDetail";
 import Paparazzi from "./components/Paparazzi";
 import Leads from "./components/Leads";
 import Roadmaps from "./components/Roadmaps";
+import ModelSwitcher from "./components/ModelSwitcher";
 
 const tabs = [
   { id: "pulse", label: "Pulse" },
@@ -47,17 +48,20 @@ function App() {
             Central Brain &middot; The Spine
           </span>
         </div>
-        <div className="text-right">
-          <div className="text-[22px] font-medium text-[#C89B3C] tabular-nums" id="clock">
-            {now.toLocaleTimeString("en-GB", { hour12: false })}
-          </div>
-          <div className="text-[11px] text-[#5c5c5c] uppercase tracking-wider">
-            {now.toLocaleDateString("en-GB", {
-              weekday: "short",
-              year: "numeric",
-              month: "short",
-              day: "2-digit",
-            })}
+        <div className="flex items-center gap-4">
+          <ModelSwitcher />
+          <div className="text-right">
+            <div className="text-[22px] font-medium text-[#C89B3C] tabular-nums" id="clock">
+              {now.toLocaleTimeString("en-GB", { hour12: false })}
+            </div>
+            <div className="text-[11px] text-[#5c5c5c] uppercase tracking-wider">
+              {now.toLocaleDateString("en-GB", {
+                weekday: "short",
+                year: "numeric",
+                month: "short",
+                day: "2-digit",
+              })}
+            </div>
           </div>
         </div>
       </header>

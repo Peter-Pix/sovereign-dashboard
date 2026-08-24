@@ -4,6 +4,10 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const SOVEREIGN_DIR = path.resolve(ROOT, "../..", ".openclaw/workspace/sovereign-os");
 
+// Výchozí modely (mohou být přepsány runtime přes modelStore)
+const DEFAULT_EXEC_MODEL = process.env.SOVEREIGN_EXEC_MODEL || "ollama/minimax-m3:cloud";
+const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_MODEL || "minimax-m3:cloud";
+
 module.exports = {
   PORT: 8891,
   PROJECTS_DIR: path.resolve(ROOT, ".."),
@@ -27,10 +31,47 @@ module.exports = {
   MAX_NAME_LEN: 128,
 
   EXEC_AGENT: process.env.SOVEREIGN_EXEC_AGENT || "main",
-  EXEC_MODEL: process.env.SOVEREIGN_EXEC_MODEL || "ollama/minimax-m3:cloud",
+
+  // Výchozí hodnoty — runtime přepisuje přes modelStore
+  DEFAULT_EXEC_MODEL,
+  DEFAULT_OLLAMA_MODEL,
+
+  // Gettery — vždy vrací aktuální (runtime) hodnotu.
+  // Lazy require uvnitř getteru (ne na top-level) zabrání circular dependency
+  // mezi config.cjs a modelStore.cjs (modelStore require config.cjs).
+  get EXEC_MODEL() {
+    try {
+      // Vyhni se circular dependency: modelStore.cjs require config.cjs,
+      // takže tady nemůžeme require modelStore na top-level.
+      // Místo toho čteme přímo ze state souboru (fallback) nebo z env.
+      const fs = require("fs");
+      const path = require("path");
+      const stateFile = path.join(this.SOVEREIGN_DIR, "model-state.json");
+      if (fs.existsSync(stateFile)) {
+        const saved = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+        if (saved.execModel) return saved.execModel;
+      }
+      return DEFAULT_EXEC_MODEL;
+    } catch {
+      return DEFAULT_EXEC_MODEL;
+    }
+  },
+  get OLLAMA_MODEL() {
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const stateFile = path.join(this.SOVEREIGN_DIR, "model-state.json");
+      if (fs.existsSync(stateFile)) {
+        const saved = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+        if (saved.ollamaModel) return saved.ollamaModel;
+      }
+      return DEFAULT_OLLAMA_MODEL;
+    } catch {
+      return DEFAULT_OLLAMA_MODEL;
+    }
+  },
 
   OLLAMA_URL: process.env.OLLAMA_URL || "http://localhost:11434",
-  OLLAMA_MODEL: process.env.OLLAMA_MODEL || "minimax-m3:cloud",
 
   PAPARAZZI_INTERVAL_MS: 60 * 60 * 1000, // 60 min
   PAPARAZZI_CACHE_TTL_MS: 60 * 1000,     // 60 s
