@@ -1,10 +1,10 @@
-// ===== Routes: Agenti (logy + exekuce) =====
+// ===== Routes: Agenti (logy + exekuce + SSE stream) =====
 const fs = require("fs");
 const path = require("path");
 const { asyncHandler, HttpError, logError } = require("../lib/logger.cjs");
 
 module.exports = function registerAgents(app, deps) {
-  const { config, requireAuth, AGENT_TASKS, runAgentExe, isSafeName } = deps;
+  const { config, requireAuth, AGENT_TASKS, runAgentExe, runAgentStream, isSafeName } = deps;
 
   app.get("/api/agents", asyncHandler(async (req, res) => {
     const agentsDir = path.join(config.SOVEREIGN_DIR, "workspaces");
@@ -44,6 +44,85 @@ module.exports = function registerAgents(app, deps) {
   process.on("SIGTERM", cleanup);
   process.on("SIGINT", cleanup);
 
+  // ===== SSE stream agenta =====
+  // GET /api/agents/:name/stream — posílá stdout/stderr v reálném čase
+  app.get("/api/agents/:name/stream", requireAuth, asyncHandler(async (req, res) => {
+    const { name } = req.params;
+    if (!AGENT_TASKS[name]) throw new HttpError(404, `Neznámý agent: ${name}`);
+    if (runningJobs.size >= MAX_PARALLEL_JOBS) {
+      throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.`);
+    }
+
+    runningJobs.add(name);
+
+    // SSE setup
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no"); // vypnout proxy buffering (nginx)
+
+    let lastActivity = Date.now();
+
+    const send = (type, payload) => {
+      if (res.writableEnded) return;
+      lastActivity = Date.now();
+      const data = JSON.stringify({ type, ...payload, t: lastActivity });
+      res.write(`data: ${data}\n\n`);
+      // Vyprázdníme buffer vždy po každé zprávě
+      if (res.flush) res.flush();
+    };
+
+    // Heartbeat každých 8s — udrží spojení živé a dá UI vědět, že nezamrzlo
+    const heartbeat = setInterval(() => {
+      if (res.writableEnded) return;
+      const idle = Date.now() - lastActivity;
+      if (idle >= 7000) {
+        send("heartbeat", { idleMs: idle });
+      }
+    }, 8000);
+
+    const cleanupStream = () => {
+      clearInterval(heartbeat);
+      if (!res.writableEnded) {
+        try { res.end(); } catch {}
+      }
+      runningJobs.delete(name);
+    };
+
+    req.on("close", cleanupStream);
+    req.on("aborted", cleanupStream);
+
+    // Zahájení streamu
+    send("start", { agent: name });
+
+    const handle = runAgentStream(name, {
+      onStdout: (chunk) => {
+        send("stdout", { chunk });
+      },
+      onStderr: (chunk) => {
+        send("stderr", { chunk });
+      },
+      onError: (err) => {
+        send("error", { message: err.message });
+        cleanupStream();
+      },
+      onDone: (result) => {
+        send("done", {
+          text: result.text.slice(0, 5000), // strih pro SSE
+          tokens: result.tokens,
+          agent: result.agent,
+        });
+        cleanupStream();
+      },
+    });
+
+    // Uživatel může stream ukončit dřív — zabijeme child
+    res.on("close", () => {
+      handle.kill();
+      cleanupStream();
+    });
+  }));
+
   app.post("/api/agents/:name/run", requireAuth, asyncHandler(async (req, res) => {
     const { name } = req.params;
     if (!AGENT_TASKS[name]) throw new HttpError(404, `Neznámý agent: ${name}`);
@@ -73,7 +152,7 @@ module.exports = function registerAgents(app, deps) {
     if (!isSafeName(name)) throw new HttpError(400, "Invalid project name");
     if (!AGENT_TASKS[agent]) throw new HttpError(404, `Neznámý agent: ${agent}`);
     if (runningJobs.size >= MAX_PARALLEL_JOBS) {
-      throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby.`);
+      throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.`);
     }
 
     const projectPath = path.join(config.PROJECTS_DIR, name);

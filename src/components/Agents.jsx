@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { API, authHeaders, cachedFetch } from "../config";
+import { API, authHeaders, cachedFetch, invalidateCache } from "../config";
 import Spinner from "./Spinner";
+import AgentStream from "./AgentStream";
 
 export default function Agents() {
   const [agents, setAgents] = useState([]);
@@ -9,6 +10,7 @@ export default function Agents() {
   const [running, setRunning] = useState({});
   const [startedAt, setStartedAt] = useState({});
   const [jobLog, setJobLog] = useState([]);
+  const [streamingAgent, setStreamingAgent] = useState(null);
 
   useEffect(() => {
     cachedFetch(`${API}/api/agents`)
@@ -44,6 +46,7 @@ export default function Agents() {
           ]);
         }
         setRunning((r) => ({ ...r, [name]: false }));
+        invalidateCache(`${API}/api/agents`);
       })
       .catch((err) => {
         const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });
@@ -52,11 +55,34 @@ export default function Agents() {
       });
   };
 
+  const streamAgent = (name) => {
+    setStreamingAgent(name);
+  };
+
+  const handleStreamClose = () => {
+    setStreamingAgent(null);
+    invalidateCache(`${API}/api/agents`);
+  };
+
   if (loading) return <p className="text-[#5c5c5c]">Načítám agenty...</p>;
   if (error) return <p className="text-[#e85d5d]">Chyba: {error}</p>;
 
   return (
     <div className="space-y-3">
+      {streamingAgent && (
+        <AgentStream
+          agentName={streamingAgent}
+          onClose={handleStreamClose}
+          onDone={(data) => {
+            const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
+            setJobLog((l) => [
+              { time: ts, agent: streamingAgent, text: `✔ Stream dokončen (${data.tokens || 0} tokens)` },
+              ...l,
+            ]);
+          }}
+        />
+      )}
+
       {agents.map((agent) => (
         <div
           key={agent.name}
@@ -72,6 +98,13 @@ export default function Agents() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => streamAgent(agent.name)}
+                disabled={running[agent.name]}
+                className="text-[10px] px-3 py-1.5 rounded-md font-semibold bg-[#1a1a1a] text-[#C89B3C] border border-[#C89B3C]/30 hover:bg-[#C89B3C]/10 disabled:opacity-40 transition-colors"
+              >
+                Stream
+              </button>
               <button
                 onClick={() => runAgent(agent.name)}
                 disabled={running[agent.name]}

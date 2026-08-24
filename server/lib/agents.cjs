@@ -1,5 +1,5 @@
 // ===== Reálná exekuce Sovereign agentů (přes OpenClaw agenta) =====
-const { execFile } = require("child_process");
+const { execFile, spawn } = require("child_process");
 const config = require("../config.cjs");
 
 const AGENT_TASKS = {
@@ -72,7 +72,7 @@ Buď věcný a stručný. Identifikuj, co je hotové a co je blokované.`,
   },
 };
 
-// Spustí exekuci agenta přes OpenClaw agenta (main)
+// Spustí exekuci agenta přes OpenClaw agenta (main) — klasický buffer-based režim
 function runAgentExe(agentName, callback) {
   const task = AGENT_TASKS[agentName];
   if (!task) {
@@ -112,4 +112,89 @@ function runAgentExe(agentName, callback) {
   });
 }
 
-module.exports = { AGENT_TASKS, runAgentExe };
+/**
+ * Stream režim — vrací stdout/stderr v reálném čase přes callbacky.
+ * @param {string} agentName
+ * @param {{ onStdout?: (chunk: string) => void, onStderr?: (chunk: string) => void, onError?: (err: Error) => void, onDone?: (result: object) => void }} handlers
+ * @returns {{ kill: () => void, pid?: number }} — handle pro ukončení
+ */
+function runAgentStream(agentName, handlers = {}) {
+  const task = AGENT_TASKS[agentName];
+  const { onStdout, onStderr, onError, onDone } = handlers;
+  let finished = false;
+
+  if (!task) {
+    const err = new Error(`Neznámý agent: ${agentName}`);
+    if (onError) onError(err);
+    return { kill() {} };
+  }
+
+  const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", task.prompt];
+  const child = spawn("openclaw", args, {
+    timeout: 300000,
+    killSignal: "SIGKILL",
+  });
+
+  const cleanup = () => {
+    if (finished) return;
+    finished = true;
+    try { child.kill("SIGKILL"); } catch {}
+  };
+
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+
+  let stdoutBuffer = "";
+
+  child.stdout.on("data", (chunk) => {
+    stdoutBuffer += chunk;
+    if (onStdout) onStdout(chunk);
+  });
+
+  child.stderr.on("data", (chunk) => {
+    if (onStderr) onStderr(chunk);
+  });
+
+  child.on("error", (err) => {
+    if (finished) return;
+    finished = true;
+    if (onError) onError(err);
+  });
+
+  child.on("exit", (code, signal) => {
+    if (finished) return;
+    finished = true;
+
+    if (code !== 0 && code !== null) {
+      const err = new Error(`Agent exited with code ${code}`);
+      if (onError) return onError(err);
+    }
+
+    // Parsování JSON výstupu
+    try {
+      const data = JSON.parse(stdoutBuffer);
+      const payloads = data.result?.payloads || [];
+      const text = payloads.map((p) => p.text || "").join("\n");
+      const usage = data.result?.meta?.agentMeta?.usage || {};
+      if (onDone) onDone({ text, tokens: usage.total || usage.input + usage.output || 0, agent: task.name, code, signal });
+    } catch {
+      if (onDone) onDone({ text: stdoutBuffer.slice(0, 1000), tokens: 0, agent: task.name, code, signal });
+    }
+  });
+
+  // Safety timeout
+  const timeout = setTimeout(() => {
+    if (finished) return;
+    cleanup();
+    if (onError) onError(new Error("Agent exekuce timeout (5 min)"));
+  }, 300000);
+
+  child.on("exit", () => clearTimeout(timeout));
+
+  return {
+    kill: cleanup,
+    pid: child.pid,
+  };
+}
+
+module.exports = { AGENT_TASKS, runAgentExe, runAgentStream };
