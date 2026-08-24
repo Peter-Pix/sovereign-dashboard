@@ -44,6 +44,9 @@ function rateLimitByRoute(routeKey) {
  * Middleware pro globální IP rate limit (fallback).
  */
 function rateLimitGlobal(req, res, next) {
+  // Webhook endpointy vyjmuté z globálního rate limitu — GitHub IP jsou legit
+  if (req.path?.startsWith("/api/webhooks/")) return next();
+
   const ip = req.ip || req.socket?.remoteAddress || "anonymous";
   const result = rateLimiter.checkGlobalIp(ip, 1);
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { API, authHeaders, cachedFetch, invalidateCache } from "../config";
 import Spinner from "./Spinner";
 import AgentStream from "./AgentStream";
+import WebhookSettings from "./WebhookSettings";
 
 export default function Agents() {
   const [agents, setAgents] = useState([]);
@@ -169,6 +170,8 @@ export default function Agents() {
           )}
         </div>
       ))}
+
+      <WebhookSettings />
 
       {/* Job activity log */}
       {jobLog.length > 0 && (
