@@ -8,6 +8,7 @@ import Paparazzi from "./components/Paparazzi";
 import Leads from "./components/Leads";
 import Roadmaps from "./components/Roadmaps";
 import ModelSwitcher from "./components/ModelSwitcher";
+import CommandPalette from "./components/CommandPalette";
 
 const tabs = [
   { id: "pulse", label: "Pulse" },
