@@ -6,6 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
 const { buildContext } = require("./contextBuilder.cjs");
+const { selfCorrect } = require("./selfCorrector.cjs");
 const config = require("../config.cjs");
 const { parseRoadmap, findRoadmapFiles } = require("./roadmaps.cjs");
 const { AGENT_TASKS } = require("./agents.cjs");
@@ -259,84 +260,75 @@ function runTaskAgent(agentName, projectName, taskText, callback) {
 
   const projectDir = path.join(config.PROJECTS_DIR, projectName);
 
-  // Context-aware prompting: přidej relevantní soubory do promptu
   let contextSection = "";
   try {
     const ctx = buildContext(projectName, taskText, { maxFiles: 8, maxCharsPerFile: 3000 });
-    contextSection = `
-
-${ctx.context}`;
+    contextSection = "\n\n" + ctx.context;
   } catch (e) {
-    contextSection = `
-
-(_Kontextové soubory se nepodařilo načíst: ${e.message}_)`;
+    contextSection = `\n\n(_Kontextové soubory se nepodařilo načíst: ${e.message}_)`;
   }
 
-  const prompt = `Jsi ${task.name} — Sovereign OS. Pracuješ na projektu "${projectName}" v ${projectDir}.
-
-ÚKOL Z ROADMAPY: ${taskText}${contextSection}
-
-POSTUP:
+  const basePrompt = `Jsi ${task.name} — Sovereign OS. Pracuješ na projektu "${projectName}" v ${projectDir}.\n\nÚKOL Z ROADMAPY: ${taskText}${contextSection}\n\nPOSTUP:
 1. Použij výše uvedený kontext (README, kód, dokumentaci).
 2. Dokonči konkrétně tento úkol: "${taskText}".
 3. Proveď skutečné změny (uprav soubory, doplň dokumentaci, oprav kód).
-4. Zapiš shrnutí toho, co jsi udělal, do ${path.join(config.SOVEREIGN_DIR, "workspaces", task.workspace, "roadmap-task-" + projectName + ".json")}.
+4. Po změnách spusť testy příkazem, který najdeš v package.json nebo pomocí "node --test".
+5. Pokud testy failují, OPRAV CHYBU a znovu je spusť. Max 3 pokusy.
+6. Zapiš shrnutí toho, co jsi udělal, do ${path.join(config.SOVEREIGN_DIR, "workspaces", task.workspace, "roadmap-task-" + projectName + ".json")}.\n\nBuď konkrétní a věcný. Pracuj jen na tomto úkolu, ne na jiných.`;
 
-Buď konkrétní a věcný. Pracuj jen na tomto úkolu, ne na jiných.`;
+  const runAgentWithPrompt = (prompt, cb) => {
+    const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", prompt];
+    let finished = false;
+    const timeout = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      cb(new Error("Agent exekuce timeout (5 min)"));
+    }, LIMITS.AGENT_TIMEOUT_MS);
 
-  const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", prompt];
-
-  let finished = false;
-  let timedOut = false;
-  const timeout = setTimeout(() => {
-    if (finished) return;
-    finished = true;
-    timedOut = true;
-    callback(new Error("Agent exekuce timeout (5 min)"));
-  }, LIMITS.AGENT_TIMEOUT_MS);
-
-  execFile(
-    "openclaw",
-    args,
-    {
+    execFile("openclaw", args, {
       timeout: LIMITS.AGENT_TIMEOUT_MS,
       maxBuffer: 10 * 1024 * 1024,
       killSignal: "SIGKILL",
-      env: { ...process.env, FORCE_COLOR: "0" }, // zamezí barevným ANSI kódům v stdout
-    },
-    (err, stdout, stderr) => {
+      env: { ...process.env, FORCE_COLOR: "0" },
+    }, (err, stdout, stderr) => {
       if (finished) return;
       finished = true;
       clearTimeout(timeout);
-
       if (err) {
-        const stderrSnippet = (stderr || "").slice(0, 500);
-        const msg = timedOut
-          ? "Timeout"
-          : `Exekuce selhala: ${err.message}` + (stderrSnippet ? ` — stderr: ${stderrSnippet}` : "");
-        return callback(new Error(msg));
+        const snippet = (stderr || "").slice(0, 500);
+        return cb(new Error(`Exekuce selhala: ${err.message}${snippet ? ` — stderr: ${snippet}` : ""}`));
       }
-
       try {
         const data = JSON.parse(stdout);
         const payloads = data.result?.payloads || [];
         const text = payloads.map((p) => p.text || "").join("\n");
-        return callback(null, { text, agent: task.name });
+        cb(null, { text, agent: task.name });
       } catch {
-        // Non-JSON output (agent wrote prose instead of JSON) — treat as valid result
         let text = (stdout || "").trim();
-        if (!text) {
-          text = "(Agent dokončil, ale nevrátil žádný výstup.)";
-        } else if (text.length > 2000) {
-          text = text.slice(0, 2000) + "\n[... truncated]";
-        }
-        return callback(null, { text, agent: task.name });
+        if (!text) text = "(Agent dokončil, ale nevrátil žádný výstup.)";
+        else if (text.length > 2000) text = text.slice(0, 2000) + "\n[... truncated]";
+        cb(null, { text, agent: task.name });
       }
-    }
-  );
+    });
+  };
+
+  selfCorrect(runAgentWithPrompt, projectDir, basePrompt)
+    .then((result) => {
+      const summary = result.success
+        ? `✓ Task dokončen na ${result.attempts}. pokus. Testy prošly.`
+        : `⚠ Task dokončen po ${result.attempts} pokusech. Testy stále failují.`;
+      const text = [result.finalResult?.text || "", "", "---", summary, "", `Test command: ${result.testResult?.command || "none"}`, `Test output: ${(result.testResult?.stdout || "").slice(0, 500)}`].join("\n");
+      callback(null, {
+        text,
+        agent: task.name,
+        attempts: result.attempts,
+        success: result.success,
+      });
+    })
+    .catch((err) => callback(err));
 }
 
-// ===== Orchestrace s ochranou proti loopu =====
+// ===== Orchestrace s ochranou proti loopu =====// ===== Orchestrace s ochranou proti loopu =====// ===== Orchestrace s ochranou proti loopu =====
 
 function canExecute() {
   if (executionState.totalExecutions >= LIMITS.MAX_TOTAL_EXECUTIONS) {
