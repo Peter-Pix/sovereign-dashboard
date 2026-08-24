@@ -1,10 +1,11 @@
-// ===== Self-Correction Loop =====
-// Po změně agenta spustí testy; pokud failují, agent dostane další pokus s chybovým výstupem.
+// server/lib/selfCorrector.cjs — Self-Correction Loop
+// Agent provede změny → spustí testy → pokud fail, opraví s git diff kontextem
 
 const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const config = require("../config.cjs");
+const { getLastDiff } = require("./gitHelper.cjs");
 
 const MAX_RETRIES = 3;
 const DEFAULT_TIMEOUT = 120_000;
@@ -27,7 +28,6 @@ function detectTestCommand(projectPath) {
       fs.existsSync(path.join(projectPath, "jest.config.ts"))) {
     return "npx jest";
   }
-  // Node built-in test runner
   if (fs.existsSync(path.join(projectPath, "tests")) ||
       fs.existsSync(path.join(projectPath, "test"))) {
     return "node --test";
@@ -37,7 +37,7 @@ function detectTestCommand(projectPath) {
 
 /**
  * Spustí testy v projektu.
- * @returns {Promise<{ ok: boolean, stdout: string, stderr: string, command: string }>}
+ * @returns {Promise<{ ok: boolean, stdout: string, stderr: string, command: string, skipped?: boolean }>}
  */
 function runTests(projectPath) {
   return new Promise((resolve) => {
@@ -61,13 +61,13 @@ function runTests(projectPath) {
 }
 
 /**
- * Zjednodušený heuristic: jsou testy failing?
+ * Heuristika: jsou testy failing?
  */
 function hasFailures(stdout, stderr) {
   const text = (stdout || "") + "\n" + (stderr || "");
   const failPatterns = [
     /failing tests:/i,
-    /✖ failing tests/i,
+    /\u2716 failing tests/i,   // ✖
     /tests? failed/i,
     /error:/i,
     /fail \d+/i,
@@ -77,13 +77,32 @@ function hasFailures(stdout, stderr) {
 }
 
 /**
- * Vytvoří correction prompt.
+ * Vytvoří correction prompt s git diff kontextem.
+ * @param {string} originalPrompt
+ * @param {number} attempt
+ * @param {object} testResult — { stdout, stderr, command }
+ * @param {string} projectPath
+ * @param {number} maxOutputLength
  */
-function buildCorrectionPrompt(originalPrompt, attempt, testResult, maxOutputLength = 3000) {
+function buildCorrectionPrompt(originalPrompt, attempt, testResult, projectPath, maxOutputLength = 3000) {
   const output = ((testResult.stdout || "") + "\n" + (testResult.stderr || "")).trim();
-  const truncated = output.length > maxOutputLength ? output.slice(0, maxOutputLength) + "\n\n[... truncated]" : output;
+  const truncated = output.length > maxOutputLength
+    ? output.slice(0, maxOutputLength) + "\n\n[... truncated]"
+    : output;
 
-  return `${originalPrompt}
+  const diff = getLastDiff(projectPath);
+  const diffSection = diff
+    ? `
+
+### 📝 Tvoje změny (git diff)
+
+\`\`\`diff
+${diff.slice(0, 3000)}
+${diff.length > 3000 ? "\n[... diff truncated]" : ""}
+\`\`\``
+    : "";
+
+  return `${originalPrompt}${diffSection}
 
 ---
 
@@ -99,7 +118,8 @@ ${truncated}
 \`\`\`
 
 PRAVIDLA:
-- Analyzuj chybu ve výstupu.
+- Analyzuj chybu ve výstupu výše.
+- Podívej se na své změny v git diff — chyba téměř jistě souvisí s něčím, cos právě změnil.
 - Oprav POUZE to, co je potřeba pro průchod testů.
 - Neztrať předchozí funkcionalitu.
 - Po opravě znovu spusť stejný test příkaz a ověř, že prochází.`;
@@ -143,7 +163,8 @@ async function selfCorrect(runAgentFn, projectPath, originalPrompt) {
       break;
     }
 
-    currentPrompt = buildCorrectionPrompt(originalPrompt, attempt + 1, lastTestResult);
+    // Správně: projectPath je 4. parametr, maxOutputLength je 5.
+    currentPrompt = buildCorrectionPrompt(originalPrompt, attempt + 1, lastTestResult, projectPath);
     attempt++;
   }
 
