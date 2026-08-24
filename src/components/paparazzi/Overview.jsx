@@ -6,14 +6,17 @@ import SystemGauge from "./SystemGauge";
 import ProjectCard from "./ProjectCard";
 import { fmtBytes } from "./constants";
 import { API as API_URL } from "../../config";
+import Spinner from "../Spinner";
 
 export default function Overview({ summary, projects, system, cached, refreshTrigger, onAddBug }) {
   const [report, setReport] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamStartedAt, setStreamStartedAt] = useState(null);
   const [reportMeta, setReportMeta] = useState(null);
 
   const streamReport = async (force = false) => {
     setIsStreaming(true);
+    setStreamStartedAt(Date.now());
     setReport("");
     
     try {
@@ -64,7 +67,7 @@ export default function Overview({ summary, projects, system, cached, refreshTri
       <div className="bg-[#0d0d0d] border border-[#C89B3C]/30 rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">
-            🎤 Paparazzi — Manažer Report {isStreaming && <span className="ml-2 animate-pulse opacity-70">(píše...)</span>}
+            🎤 Paparazzi — Manažer Report {isStreaming && <span className="ml-2"><Spinner label="píše" startedAt={streamStartedAt} /></span>}
           </h3>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-[#5c5c5c] font-mono">

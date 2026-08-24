@@ -1,6 +1,7 @@
 // Roadmapy — přehled roadmap napříč projekty + autonomní exekuce.
 import { useState, useEffect } from "react";
 import { API } from "../config";
+import Spinner from "./Spinner";
 
 function ProgressBar({ pct }) {
   const color = pct >= 70 ? "#3ecf8e" : pct >= 30 ? "#e5b34b" : "#e85d5d";
@@ -43,6 +44,7 @@ function RoadmapDetail({ project, onBack }) {
   const [error, setError] = useState(null);
   const [nextTask, setNextTask] = useState(null);
   const [executing, setExecuting] = useState(false);
+  const [execStartedAt, setExecStartedAt] = useState(null);
   const [execResult, setExecResult] = useState(null);
 
   const loadDetail = () => {
@@ -79,6 +81,7 @@ function RoadmapDetail({ project, onBack }) {
 
   const runNextTask = async () => {
     setExecuting(true);
+    setExecStartedAt(Date.now());
     setExecResult(null);
     try {
       const res = await fetch(`${API}/api/executor/run/${project}`, {
@@ -130,7 +133,7 @@ function RoadmapDetail({ project, onBack }) {
               disabled={executing}
               className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-50 transition-colors"
             >
-              {executing ? "⏳ Agent pracuje..." : "▶ Spustit agenta na tento task"}
+              {executing ? <Spinner label="Agent pracuje" startedAt={execStartedAt} /> : "▶ Spustit agenta na tento task"}
             </button>
           </div>
         ) : (

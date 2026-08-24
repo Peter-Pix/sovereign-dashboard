@@ -3,11 +3,13 @@ import { useState } from "react";
 import { activityMeta, healthColor } from "./constants";
 import { MiniStat } from "./Stat";
 import { API as API_URL } from "../../config";
+import Spinner from "../Spinner";
 
 export default function ProjectCard({ p, onAddBug }) {
   const [isAdding, setIsAdding] = useState(false);
   const [bugTitle, setBugTitle] = useState("");
   const [agentRunning, setAgentRunning] = useState(false);
+  const [agentStartedAt, setAgentStartedAt] = useState(null);
   const [agentResult, setAgentResult] = useState(null);
 
   const handleAddBug = async (e) => {
@@ -21,6 +23,7 @@ export default function ProjectCard({ p, onAddBug }) {
 
   const handleRunAgent = async () => {
     setAgentRunning(true);
+    setAgentStartedAt(Date.now());
     setAgentResult(null);
     try {
       const res = await fetch(`${API_URL}/api/projects/${p.name}/run-agent`, {
@@ -96,7 +99,7 @@ export default function ProjectCard({ p, onAddBug }) {
           disabled={agentRunning}
           className="flex-1 text-[10px] uppercase tracking-wider font-semibold px-2 py-1 rounded-md border border-[#232323] text-[#9d9d9d] hover:text-[#C89B3C] hover:border-[#C89B3C] disabled:opacity-50 transition-colors"
         >
-          {agentRunning ? "⏳ Audit..." : "🤖 Audit"}
+          {agentRunning ? <Spinner label="Audit" startedAt={agentStartedAt} /> : "🤖 Audit"}
         </button>
         <a
           href={`vscode://file/${encodeURIComponent("/Users/petrpiskacek/projects/" + p.name)}`}

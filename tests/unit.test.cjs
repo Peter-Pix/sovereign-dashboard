@@ -133,3 +133,14 @@ test("getExecutionState: vrací stav s budgetem", () => {
   assert.strictEqual(state.maxTotal, LIMITS.MAX_TOTAL_EXECUTIONS);
   assert.strictEqual(state.stuckTasks, 0);
 });
+
+// ===== Spinner (formatElapsed) =====
+// Import z ESM modulu — použijeme dynamic import
+test("formatElapsed: formátuje elapsed time", async () => {
+  const { formatElapsed } = await import("../src/lib/format.js");
+  assert.strictEqual(formatElapsed(0), "0s");
+  assert.strictEqual(formatElapsed(5000), "5s");
+  assert.strictEqual(formatElapsed(65000), "1m 5s");
+  assert.strictEqual(formatElapsed(125000), "2m 5s");
+  assert.strictEqual(formatElapsed(60000), "1m 0s");
+});

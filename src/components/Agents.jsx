@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { API, authHeaders, cachedFetch } from "../config";
+import Spinner from "./Spinner";
 
 export default function Agents() {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [running, setRunning] = useState({});
+  const [startedAt, setStartedAt] = useState({});
   const [jobLog, setJobLog] = useState([]);
 
   useEffect(() => {
@@ -23,6 +25,7 @@ export default function Agents() {
   const runAgent = (name) => {
     if (running[name]) return;
     setRunning((r) => ({ ...r, [name]: true }));
+    setStartedAt((s) => ({ ...s, [name]: Date.now() }));
     const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
     setJobLog((l) => [{ time: ts, agent: name, text: "▶ Job spuštěn — agent pracuje (reálná exekuce)..." }, ...l]);
     fetch(`${API}/api/agents/${encodeURIComponent(name)}/run`, { method: "POST", headers: authHeaders() })
@@ -74,7 +77,7 @@ export default function Agents() {
                 disabled={running[agent.name]}
                 className="text-[10px] px-3 py-1.5 rounded-md font-semibold bg-[#C89B3C] text-[#0a0a0a] hover:bg-[#8f6f26] disabled:opacity-40 transition-colors"
               >
-                {running[agent.name] ? "Běží..." : "Spustit job"}
+                {running[agent.name] ? <Spinner label="Běží" startedAt={startedAt[agent.name]} /> : "Spustit job"}
               </button>
               <a
                 href={`${API}/api/files?p=${encodeURIComponent(agent.workspacePath + "/manifest.json")}`}
