@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { API, authHeaders, cachedFetch, invalidateCache } from "../config";
+import ContextPreview from "./ContextPreview";
 
 export default function ProjectDetail({ projectName, onBack }) {
   const [project, setProject] = useState(null);

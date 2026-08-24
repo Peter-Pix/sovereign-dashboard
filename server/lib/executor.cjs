@@ -5,6 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
+const { buildContext } = require("./contextBuilder.cjs");
 const config = require("../config.cjs");
 const { parseRoadmap, findRoadmapFiles } = require("./roadmaps.cjs");
 const { AGENT_TASKS } = require("./agents.cjs");
@@ -257,12 +258,26 @@ function runTaskAgent(agentName, projectName, taskText, callback) {
   if (!task) return callback(new Error(`Neznámý agent: ${agentName}`));
 
   const projectDir = path.join(config.PROJECTS_DIR, projectName);
+
+  // Context-aware prompting: přidej relevantní soubory do promptu
+  let contextSection = "";
+  try {
+    const ctx = buildContext(projectName, taskText, { maxFiles: 8, maxCharsPerFile: 3000 });
+    contextSection = `
+
+${ctx.context}`;
+  } catch (e) {
+    contextSection = `
+
+(_Kontextové soubory se nepodařilo načíst: ${e.message}_)`;
+  }
+
   const prompt = `Jsi ${task.name} — Sovereign OS. Pracuješ na projektu "${projectName}" v ${projectDir}.
 
-ÚKOL Z ROADMAPY: ${taskText}
+ÚKOL Z ROADMAPY: ${taskText}${contextSection}
 
 POSTUP:
-1. Prozkoumej projekt v ${projectDir} (README, struktura, stav).
+1. Použij výše uvedený kontext (README, kód, dokumentaci).
 2. Dokonči konkrétně tento úkol: "${taskText}".
 3. Proveď skutečné změny (uprav soubory, doplň dokumentaci, oprav kód).
 4. Zapiš shrnutí toho, co jsi udělal, do ${path.join(config.SOVEREIGN_DIR, "workspaces", task.workspace, "roadmap-task-" + projectName + ".json")}.

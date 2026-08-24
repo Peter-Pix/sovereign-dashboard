@@ -108,6 +108,7 @@ require("./routes/executor.cjs")(app, deps);
 require("./routes/models.cjs")(app, deps);
 require("./routes/rateLimits.cjs")(app, deps);
 require("./routes/githubWebhook.cjs")(app, deps);
+require("./routes/context.cjs")(app, deps);
 require("./routes/alerts.cjs")(app, deps);
 
 // ===== 404 handler =====
