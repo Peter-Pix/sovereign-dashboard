@@ -9,6 +9,8 @@ import Leads from "./components/Leads";
 import Roadmaps from "./components/Roadmaps";
 import ModelSwitcher from "./components/ModelSwitcher";
 import CommandPalette from "./components/CommandPalette";
+import AlertBell from "./components/AlertBell";
+import AlertFeed from "./components/AlertFeed";
 
 const tabs = [
   { id: "pulse", label: "Pulse" },
@@ -23,6 +25,7 @@ const tabs = [
 function App() {
   const [activeTab, setActiveTab] = useState("pulse");
   const [selectedProject, setSelectedProject] = useState(null);
+  const [alertFeedOpen, setAlertFeedOpen] = useState(false);
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -51,6 +54,7 @@ function App() {
         </div>
         <div className="flex items-center gap-4">
           <ModelSwitcher />
+          <AlertBell onOpenFeed={() => setAlertFeedOpen(true)} />
           <div className="text-right">
             <div className="text-[22px] font-medium text-[#C89B3C] tabular-nums" id="clock">
               {now.toLocaleTimeString("en-GB", { hour12: false })}
