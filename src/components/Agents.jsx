@@ -3,6 +3,7 @@ import { API, authHeaders, cachedFetch, invalidateCache } from "../config";
 import Spinner from "./Spinner";
 import AgentStream from "./AgentStream";
 import WebhookSettings from "./WebhookSettings";
+import McpManager from "./McpManager";
 
 export default function Agents() {
   const [agents, setAgents] = useState([]);
@@ -172,6 +173,7 @@ export default function Agents() {
       ))}
 
       <WebhookSettings />
+      <McpManager />
 
       {/* Job activity log */}
       {jobLog.length > 0 && (
