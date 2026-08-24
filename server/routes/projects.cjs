@@ -1,39 +1,49 @@
 // ===== Routes: Projekty =====
 const fs = require("fs");
 const path = require("path");
+const { asyncHandler, HttpError } = require("../lib/logger.cjs");
 
 module.exports = function registerProjects(app, deps) {
   const { config, isSafeName, getProjectsCached, getProjectInfo } = deps;
 
-  app.get("/api/projects", async (req, res) => {
+  app.get("/api/projects", asyncHandler(async (req, res) => {
     try {
       const projects = await getProjectsCached();
       res.json(projects);
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      throw new HttpError(500, "Failed to collect projects", { details: e.message, expose: false });
     }
-  });
+  }));
 
-  app.get("/api/projects/:name", async (req, res) => {
+  app.get("/api/projects/:name", asyncHandler(async (req, res) => {
     const { name } = req.params;
-    if (!isSafeName(name)) return res.status(400).json({ error: "Invalid project name" });
+    if (!isSafeName(name)) throw new HttpError(400, "Invalid project name", { details: "Name must match /^[A-Za-z0-9._-]+$/" });
+
     const p = path.join(config.PROJECTS_DIR, name);
     if (!fs.existsSync(p) || !fs.existsSync(path.join(p, ".git"))) {
-      return res.status(404).json({ error: "Project not found" });
+      throw new HttpError(404, "Project not found");
     }
     try {
       const info = await getProjectInfo(name, { withLog: true });
+      if (!info) throw new HttpError(500, "Failed to read project info", { expose: false });
+
       const bugsDir = path.join(p, "bugs");
       let bugs = [];
       if (fs.existsSync(bugsDir)) {
-        bugs = fs.readdirSync(bugsDir).filter((f) => f.endsWith(".json")).map((f) => {
-          const content = JSON.parse(fs.readFileSync(path.join(bugsDir, f), "utf8"));
-          return { id: f.replace(".json", ""), ...content };
-        });
+        try {
+          bugs = fs.readdirSync(bugsDir).filter((f) => f.endsWith(".json")).map((f) => {
+            try {
+              return { id: f.replace(".json", ""), ...JSON.parse(fs.readFileSync(path.join(bugsDir, f), "utf8")) };
+            } catch {
+              return null; // skip corrupted bug file
+            }
+          }).filter(Boolean);
+        } catch {}
       }
       res.json({ ...info, bugs });
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      if (e instanceof HttpError) throw e;
+      throw new HttpError(500, "Project read failed", { details: e.message, expose: false });
     }
-  });
+  }));
 };

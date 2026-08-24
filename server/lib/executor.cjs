@@ -417,12 +417,22 @@ function executeAllTasks(projectName, callback) {
 
     runTaskAgent(next.agent, projectName, next.task, (err, result) => {
       if (err) {
-        failed.push({ task: next.task, error: err.message });
+        const category = err.message?.includes("timeout") || err.message?.includes("Timeout")
+          ? "timeout"
+          : (err.message?.includes("OLLAMA") || err.message?.includes("Bad Gateway") ? "upstream" : "internal");
+        failed.push({
+          task: next.task,
+          agent: next.agent,
+          error: err.message,
+          category,
+          retryable: category !== "internal",
+          at: new Date().toISOString(),
+        });
       } else {
         const marked = markTaskDone(projectName, next.file, next.task);
         if (marked) {
           completed.push({ task: next.task, agent: next.agent });
-          clearTaskAttempts(key); // viz Bug B
+          clearTaskAttempts(key);
         } else {
           boundedAdd(executionState.stuckTasks, key, true);
           skipped.push({ task: next.task, reason: "Nepodařilo se odškrtnout (stuck)" });
@@ -541,11 +551,16 @@ function startQueueWorker() {
 
     runTaskAgent(item.agent, item.project, item.task, (err, result) => {
       if (err) {
+        const category = err.message?.includes("timeout") || err.message?.includes("Timeout")
+          ? "timeout"
+          : (err.message?.includes("OLLAMA") || err.message?.includes("Bad Gateway") ? "upstream" : "internal");
         executionState.queueLog.unshift({
           task: item.task,
           agent: item.agent,
           status: "failed",
           error: err.message,
+          category,
+          retryable: category !== "internal",
           at: new Date().toISOString(),
         });
       } else {

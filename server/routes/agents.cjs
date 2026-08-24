@@ -1,72 +1,87 @@
 // ===== Routes: Agenti (logy + exekuce) =====
 const fs = require("fs");
 const path = require("path");
+const { asyncHandler, HttpError, logError } = require("../lib/logger.cjs");
 
 module.exports = function registerAgents(app, deps) {
   const { config, requireAuth, AGENT_TASKS, runAgentExe, isSafeName } = deps;
 
-  // Seznam agentů s manifesty + logy
-  app.get("/api/agents", (req, res) => {
+  app.get("/api/agents", asyncHandler(async (req, res) => {
     const agentsDir = path.join(config.SOVEREIGN_DIR, "workspaces");
     const agents = [];
-    if (fs.existsSync(agentsDir)) {
-      fs.readdirSync(agentsDir).forEach((name) => {
-        const ws = path.join(agentsDir, name);
-        try {
-          if (!fs.statSync(ws).isDirectory()) return;
-        } catch { return; }
-        const manifestPath = path.join(ws, "manifest.json");
-        const logPath = path.join(ws, "agent.log");
-        let manifest = null;
-        let log = [];
-        if (fs.existsSync(manifestPath)) {
-          try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); } catch {}
+    if (!fs.existsSync(agentsDir)) return res.json(agents);
+
+    const entries = fs.readdirSync(agentsDir);
+    for (const name of entries) {
+      const ws = path.join(agentsDir, name);
+      let stat;
+      try { stat = fs.statSync(ws); } catch { continue; }
+      if (!stat.isDirectory()) continue;
+
+      const manifestPath = path.join(ws, "manifest.json");
+      const logPath = path.join(ws, "agent.log");
+      let manifest = null;
+      let log = [];
+      if (fs.existsSync(manifestPath)) {
+        try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); } catch (e) {
+          logError({ err: e, extra: { source: "agent_manifest", agent: name } });
         }
-        if (fs.existsSync(logPath)) {
-          try { log = fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).slice(-20); } catch {}
+      }
+      if (fs.existsSync(logPath)) {
+        try { log = fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).slice(-20); } catch (e) {
+          logError({ err: e, extra: { source: "agent_log", agent: name } });
         }
-        agents.push({ name, manifest, log, workspacePath: ws });
-      });
+      }
+      agents.push({ name, manifest, log, workspacePath: ws });
     }
     res.json(agents);
-  });
+  }));
 
-  // Spuštění agenta (rate limited)
+  // Rate-limited job execution
   const runningJobs = new Set();
   const MAX_PARALLEL_JOBS = 2;
-  // Bug 13: Cleanup při SIGTERM/SIGINT
   const cleanup = () => runningJobs.clear();
   process.on("SIGTERM", cleanup);
   process.on("SIGINT", cleanup);
 
-  app.post("/api/agents/:name/run", requireAuth, (req, res) => {
+  app.post("/api/agents/:name/run", requireAuth, asyncHandler(async (req, res) => {
     const { name } = req.params;
-    if (!AGENT_TASKS[name]) return res.status(404).json({ error: `Neznámý agent: ${name}` });
-    if (runningJobs.size >= MAX_PARALLEL_JOBS) return res.status(429).json({ error: `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.` });
-    runningJobs.add(name);
-    runAgentExe(name, (err, result) => {
-      runningJobs.delete(name);
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ success: true, ...result });
-    });
-  });
+    if (!AGENT_TASKS[name]) throw new HttpError(404, `Neznámý agent: ${name}`);
+    if (runningJobs.size >= MAX_PARALLEL_JOBS) {
+      throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.`);
+    }
 
-  // Spuštění agenta na konkrétním projektu (Action Center)
-  app.post("/api/projects/:name/run-agent", requireAuth, (req, res) => {
+    runningJobs.add(name);
+    try {
+      const result = await new Promise((resolve, reject) => {
+        runAgentExe(name, (err, result) => {
+          runningJobs.delete(name); // cleanup vždy, ať dopadne jakkoliv
+          if (err) return reject(err);
+          resolve(result);
+        });
+      });
+      res.json({ success: true, ...result });
+    } catch (e) {
+      runningJobs.delete(name); // safety cleanup pro případ promise reject
+      throw new HttpError(500, `Agent exekuce selhala: ${e.message}`, { expose: false });
+    }
+  }));
+
+  app.post("/api/projects/:name/run-agent", requireAuth, asyncHandler(async (req, res) => {
     const { name } = req.params;
-    const { agent = "archivist" } = req.body;
-    // Bug 8: Path traversal ochrana
-    if (!isSafeName(name)) return res.status(400).json({ error: "Invalid project name" });
-    if (!AGENT_TASKS[agent]) return res.status(404).json({ error: `Neznámý agent: ${agent}` });
-    if (runningJobs.size >= MAX_PARALLEL_JOBS) return res.status(429).json({ error: `Max ${MAX_PARALLEL_JOBS} paralelní joby.` });
+    const { agent = "archivist" } = req.body || {};
+    if (!isSafeName(name)) throw new HttpError(400, "Invalid project name");
+    if (!AGENT_TASKS[agent]) throw new HttpError(404, `Neznámý agent: ${agent}`);
+    if (runningJobs.size >= MAX_PARALLEL_JOBS) {
+      throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby.`);
+    }
 
     const projectPath = path.join(config.PROJECTS_DIR, name);
-    // Po validaci ověříme, že cesta je uvnitř PROJECTS_DIR
     const resolved = path.resolve(projectPath);
     if (!resolved.startsWith(path.resolve(config.PROJECTS_DIR))) {
-      return res.status(403).json({ error: "Path outside allowed root" });
+      throw new HttpError(403, "Path outside allowed root");
     }
-    if (!fs.existsSync(projectPath)) return res.status(404).json({ error: "Project not found" });
+    if (!fs.existsSync(projectPath)) throw new HttpError(404, "Project not found");
 
     const task = AGENT_TASKS[agent];
     const projectPrompt = `Jsi ${task.name} — Sovereign OS. Pracuješ na projektu "${name}" v ${projectPath}.
@@ -83,32 +98,41 @@ Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
 
     const jobKey = `${agent}:${name}`;
     runningJobs.add(jobKey);
-    // Spustíme s custom promptem
-    const { execFile } = require("child_process");
-    const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", projectPrompt];
-    // Bug 5: killSignal pro zombie processes
-    execFile("openclaw", args, {
-      timeout: 300000,
-      maxBuffer: 10 * 1024 * 1024,
-      killSignal: "SIGKILL",
-      env: { ...process.env, FORCE_COLOR: "0" }, // Bug C (z minula): bez ANSI
-    }, (err, stdout, stderr) => {
+
+    try {
+      const { execFile } = require("child_process");
+      const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", projectPrompt];
+
+      const { stdout, stderr } = await new Promise((resolve, reject) => {
+        execFile("openclaw", args, {
+          timeout: 300000,
+          maxBuffer: 10 * 1024 * 1024,
+          killSignal: "SIGKILL",
+          env: { ...process.env, FORCE_COLOR: "0" },
+        }, (err, stdout, stderr) => {
+          if (err) {
+            const snippet = (stderr || "").slice(0, 500);
+            return reject(new Error(`${err.message}${snippet ? ` — ${snippet}` : ""}`));
+          }
+          resolve({ stdout, stderr });
+        });
+      });
       runningJobs.delete(jobKey);
-      if (err) {
-        const stderrSnippet = (stderr || "").slice(0, 500);
-        return res.status(500).json({ error: `Exekuce selhala: ${err.message}` + (stderrSnippet ? ` — ${stderrSnippet}` : "") });
-      }
+
       try {
         const data = JSON.parse(stdout);
         const payloads = data.result?.payloads || [];
         const text = payloads.map((p) => p.text || "").join("\n");
-        res.json({ success: true, text, agent: task.name, project: name });
+        return res.json({ success: true, text, agent: task.name, project: name });
       } catch {
         let text = (stdout || "").trim();
         if (!text) text = "(Agent dokončil, ale nevrátil žádný výstup.)";
         else if (text.length > 2000) text = text.slice(0, 2000) + "\n[... truncated]";
-        res.json({ success: true, text, agent: task.name, project: name });
+        return res.json({ success: true, text, agent: task.name, project: name });
       }
-    });
-  });
+    } catch (e) {
+      runningJobs.delete(jobKey); // safety cleanup
+      throw new HttpError(500, `Exekuce selhala: ${e.message}`, { expose: false });
+    }
+  }));
 };

@@ -115,10 +115,12 @@ async function getProjectInfo(name, options = {}) {
 
   // Health score: čistý tree + README + bugy + aktivita
   let health = 50;
-  if (git) {
+  if (git && typeof git.timestamp === "number" && !isNaN(git.timestamp)) {
     const ageDays = (Date.now() - git.timestamp * 1000) / (1000 * 60 * 60 * 24);
     health += Math.max(0, 30 - ageDays); // aktivní projekty dostanou +až 30
     if (git.dirty) health -= 15; // dirty penalizace
+  } else {
+    health = 30; // žádná git metadata → projekt podezřelý
   }
   if (hasReadme) {
     health += readmeLines >= 5 ? 20 : 10;
