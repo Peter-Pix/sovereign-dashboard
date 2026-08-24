@@ -15,7 +15,7 @@ async function callOllama(prompt, onToken = null) {
     body: JSON.stringify({
       model: config.OLLAMA_MODEL,
       prompt: prompt,
-      stream: true, // Povolíme streamování
+      stream: true,
     }),
   });
 
@@ -34,9 +34,13 @@ async function callOllama(prompt, onToken = null) {
       if (!line.trim()) continue;
       try {
         const json = JSON.parse(line);
-        const token = json.response;
-        fullText += token;
-        if (onToken) onToken(token);
+        // Guard against missing or non-string response (some Ollama variants
+        // return { identity_layer_json: "..." } instead of { response: "..." })
+        const token = json.response ?? json.identity_layer_json ?? "";
+        if (typeof token === "string") {
+          fullText += token;
+          if (onToken) onToken(token);
+        }
         if (json.done) break;
       } catch (e) {
         // Ignoruj nevalidní JSON řádky
