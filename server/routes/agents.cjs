@@ -2,9 +2,10 @@
 const fs = require("fs");
 const path = require("path");
 const { asyncHandler, HttpError, logError } = require("../lib/logger.cjs");
+const rateLimiter = require("../lib/rateLimiter.cjs");
 
 module.exports = function registerAgents(app, deps) {
-  const { config, requireAuth, AGENT_TASKS, runAgentExe, runAgentStream, isSafeName } = deps;
+  const { config, requireAuth, AGENT_TASKS, runAgentExe, runAgentStream, isSafeName, rateLimitMiddleware } = deps;
 
   app.get("/api/agents", asyncHandler(async (req, res) => {
     const agentsDir = path.join(config.SOVEREIGN_DIR, "workspaces");
@@ -46,9 +47,22 @@ module.exports = function registerAgents(app, deps) {
 
   // ===== SSE stream agenta =====
   // GET /api/agents/:name/stream — posílá stdout/stderr v reálném čase
-  app.get("/api/agents/:name/stream", requireAuth, asyncHandler(async (req, res) => {
+  app.get("/api/agents/:name/stream",
+    requireAuth,
+    rateLimitMiddleware.rateLimitByRoute("/api/agents/:name/stream"), asyncHandler(async (req, res) => {
     const { name } = req.params;
     if (!AGENT_TASKS[name]) throw new HttpError(404, `Neznámý agent: ${name}`);
+
+    // Token budget check (odhad před spuštěním)
+    const estimated = rateLimiter.estimateTokens(config.EXEC_MODEL, AGENT_TASKS[name].prompt);
+    const budget = rateLimiter.checkAgentBudget(name, estimated);
+    if (!budget.allowed) {
+      throw new HttpError(429, `Agent budget vyčerpán: ${budget.current}/${budget.limit} tokenů`, {
+        retryable: true,
+        details: budget,
+      });
+    }
+
     if (runningJobs.size >= MAX_PARALLEL_JOBS) {
       throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.`);
     }
@@ -123,9 +137,23 @@ module.exports = function registerAgents(app, deps) {
     });
   }));
 
-  app.post("/api/agents/:name/run", requireAuth, asyncHandler(async (req, res) => {
+  app.post("/api/agents/:name/run",
+    requireAuth,
+    rateLimitMiddleware.rateLimitByRoute("/api/agents/:name/run"),
+    asyncHandler(async (req, res) => {
     const { name } = req.params;
     if (!AGENT_TASKS[name]) throw new HttpError(404, `Neznámý agent: ${name}`);
+
+    // Token budget check (odhad před spuštěním)
+    const estimated = rateLimiter.estimateTokens(config.EXEC_MODEL, AGENT_TASKS[name].prompt);
+    const budget = rateLimiter.checkAgentBudget(name, estimated);
+    if (!budget.allowed) {
+      throw new HttpError(429, `Agent budget vyčerpán: ${budget.current}/${budget.limit} tokenů`, {
+        retryable: true,
+        details: budget,
+      });
+    }
+
     if (runningJobs.size >= MAX_PARALLEL_JOBS) {
       throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.`);
     }
@@ -146,7 +174,10 @@ module.exports = function registerAgents(app, deps) {
     }
   }));
 
-  app.post("/api/projects/:name/run-agent", requireAuth, asyncHandler(async (req, res) => {
+  app.post("/api/projects/:name/run-agent",
+    requireAuth,
+    rateLimitMiddleware.rateLimitByRoute("/api/projects/:name/run-agent"),
+    asyncHandler(async (req, res) => {
     const { name } = req.params;
     const { agent = "archivist" } = req.body || {};
     if (!isSafeName(name)) throw new HttpError(400, "Invalid project name");

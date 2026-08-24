@@ -1,9 +1,10 @@
 // ===== Routes: Roadmap Executor (autonomní dokončování tasků) =====
 const { asyncHandler, HttpError } = require("../lib/logger.cjs");
+const rateLimiter = require("../lib/rateLimiter.cjs");
 
 module.exports = function registerExecutor(app, deps) {
   const {
-    requireAuth, isSafeName,
+    requireAuth, isSafeName, rateLimitMiddleware,
     findNextTask, executeOneTask,
     enqueueProjectTasks, startQueueWorker,
     getQueueState, pauseQueue, resumeQueue,
@@ -35,7 +36,10 @@ module.exports = function registerExecutor(app, deps) {
     res.json({ success: true, message: "Exekuční stav resetován" });
   }));
 
-  app.post("/api/executor/run/:project", requireAuth, asyncHandler(async (req, res) => {
+  app.post("/api/executor/run/:project",
+    requireAuth,
+    rateLimitMiddleware.rateLimitByRoute("/api/executor/run/:project"),
+    asyncHandler(async (req, res) => {
     const { project } = req.params;
     if (!isSafeName(project)) throw new HttpError(400, "Invalid project name");
 
@@ -52,7 +56,10 @@ module.exports = function registerExecutor(app, deps) {
     }
   }));
 
-  app.post("/api/executor/run-all/:project", requireAuth, asyncHandler(async (req, res) => {
+  app.post("/api/executor/run-all/:project",
+    requireAuth,
+    rateLimitMiddleware.rateLimitByRoute("/api/executor/run-all/:project"),
+    asyncHandler(async (req, res) => {
     const { project } = req.params;
     if (!isSafeName(project)) throw new HttpError(400, "Invalid project name");
 
@@ -73,7 +80,10 @@ module.exports = function registerExecutor(app, deps) {
     res.json(resumeQueue());
   }));
 
-  app.post("/api/executor/queue/:project", requireAuth, asyncHandler(async (req, res) => {
+  app.post("/api/executor/queue/:project",
+    requireAuth,
+    rateLimitMiddleware.rateLimitByRoute("/api/executor/queue/:project"),
+    asyncHandler(async (req, res) => {
     const { project } = req.params;
     if (!isSafeName(project)) throw new HttpError(400, "Invalid project name");
 

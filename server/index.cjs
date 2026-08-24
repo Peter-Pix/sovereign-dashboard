@@ -35,6 +35,8 @@ const cors = require("cors");
 const config = require("./config.cjs");
 const logger = require("./lib/logger.cjs");
 const modelStore = require("./lib/modelStore.cjs");
+const rateLimitMiddleware = require("./lib/rateLimitMiddleware.cjs");
+const { rateLimitGlobal } = rateLimitMiddleware;
 const { isSafeName, listProjectDirs, getProjectInfo, getProjectsCached, SKIP_DIRS, collectProjectData, summarizeProjects } = require("./lib/projects.cjs");
 const { collectSystemData } = require("./lib/system.cjs");
 const { buildPaparazziPrompt, callOllama, gatherAllData, PAPARAZZI_REPORT_DIR, PAPARAZZI_REPORT_FILE, PAPARAZZI_HISTORY_FILE } = require("./lib/paparazzi.cjs");
@@ -90,7 +92,7 @@ function requireAuth(req, res, next) {
 }
 
 // ===== Sdílené dependency pro routes =====
-const deps = { config, requireAuth, logger, modelStore, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, getProjectsCached, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe, runAgentStream, collectRoadmaps, findNextTask, markTaskDone, runTaskAgent, routeTaskToAgent, executeOneTask, executeAllTasks, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, getExecutionState, resetExecutionState };
+const deps = { config, requireAuth, logger, modelStore, rateLimitMiddleware, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, getProjectsCached, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe, runAgentStream, collectRoadmaps, findNextTask, markTaskDone, runTaskAgent, routeTaskToAgent, executeOneTask, executeAllTasks, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, getExecutionState, resetExecutionState };
 
 // ===== Registrace routes =====
 require("./routes/projects.cjs")(app, deps);
@@ -103,6 +105,7 @@ require("./routes/paparazzi.cjs")(app, deps);
 require("./routes/roadmaps.cjs")(app, deps);
 require("./routes/executor.cjs")(app, deps);
 require("./routes/models.cjs")(app, deps);
+require("./routes/rateLimits.cjs")(app, deps);
 
 // ===== 404 handler =====
 app.use((req, res) => {
