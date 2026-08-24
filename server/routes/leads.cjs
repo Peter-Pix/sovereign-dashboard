@@ -17,11 +17,15 @@ module.exports = function registerLeads(app, deps) {
         } catch {}
       });
     }
+    // Bug 6: dedup přes name + city (kolize pro firmy se stejným názvem v různých městech)
     const seen = new Set();
     res.json(all.filter((l) => {
-      const k = (l.name || "").toLowerCase();
-      if (!k || seen.has(k)) return false;
-      seen.add(k);
+      const name = (l.name || "").toLowerCase().trim();
+      if (!name) return false;
+      const city = (l.city || l.lokace || l.location || "").toLowerCase().trim();
+      const key = `${name}::${city}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     }));
   });

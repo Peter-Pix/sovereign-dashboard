@@ -12,7 +12,9 @@ module.exports = function registerAgents(app, deps) {
     if (fs.existsSync(agentsDir)) {
       fs.readdirSync(agentsDir).forEach((name) => {
         const ws = path.join(agentsDir, name);
-        if (!fs.statSync(ws).isDirectory()) return;
+        try {
+          if (!fs.statSync(ws).isDirectory()) return;
+        } catch { return; }
         const manifestPath = path.join(ws, "manifest.json");
         const logPath = path.join(ws, "agent.log");
         let manifest = null;
@@ -21,7 +23,7 @@ module.exports = function registerAgents(app, deps) {
           try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); } catch {}
         }
         if (fs.existsSync(logPath)) {
-          log = fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).slice(-20);
+          try { log = fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).slice(-20); } catch {}
         }
         agents.push({ name, manifest, log, workspacePath: ws });
       });
@@ -32,6 +34,11 @@ module.exports = function registerAgents(app, deps) {
   // Spuštění agenta (rate limited)
   const runningJobs = new Set();
   const MAX_PARALLEL_JOBS = 2;
+  // Bug 13: Cleanup při SIGTERM/SIGINT
+  const cleanup = () => runningJobs.clear();
+  process.on("SIGTERM", cleanup);
+  process.on("SIGINT", cleanup);
+
   app.post("/api/agents/:name/run", requireAuth, (req, res) => {
     const { name } = req.params;
     if (!AGENT_TASKS[name]) return res.status(404).json({ error: `Neznámý agent: ${name}` });
@@ -48,12 +55,17 @@ module.exports = function registerAgents(app, deps) {
   app.post("/api/projects/:name/run-agent", requireAuth, (req, res) => {
     const { name } = req.params;
     const { agent = "archivist" } = req.body;
+    // Bug 8: Path traversal ochrana
     if (!isSafeName(name)) return res.status(400).json({ error: "Invalid project name" });
     if (!AGENT_TASKS[agent]) return res.status(404).json({ error: `Neznámý agent: ${agent}` });
     if (runningJobs.size >= MAX_PARALLEL_JOBS) return res.status(429).json({ error: `Max ${MAX_PARALLEL_JOBS} paralelní joby.` });
 
-    // Vytvoříme prompt specifický pro daný projekt
     const projectPath = path.join(config.PROJECTS_DIR, name);
+    // Po validaci ověříme, že cesta je uvnitř PROJECTS_DIR
+    const resolved = path.resolve(projectPath);
+    if (!resolved.startsWith(path.resolve(config.PROJECTS_DIR))) {
+      return res.status(403).json({ error: "Path outside allowed root" });
+    }
     if (!fs.existsSync(projectPath)) return res.status(404).json({ error: "Project not found" });
 
     const task = AGENT_TASKS[agent];
@@ -69,20 +81,33 @@ POSTUP:
 
 Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
 
-    runningJobs.add(`${agent}:${name}`);
+    const jobKey = `${agent}:${name}`;
+    runningJobs.add(jobKey);
     // Spustíme s custom promptem
     const { execFile } = require("child_process");
     const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", projectPrompt];
-    execFile("openclaw", args, { timeout: 300000, maxBuffer: 10 * 1024 * 1024, killSignal: "SIGKILL" }, (err, stdout, stderr) => {
-      runningJobs.delete(`${agent}:${name}`);
-      if (err) return res.status(500).json({ error: `Exekuce selhala: ${err.message}` });
+    // Bug 5: killSignal pro zombie processes
+    execFile("openclaw", args, {
+      timeout: 300000,
+      maxBuffer: 10 * 1024 * 1024,
+      killSignal: "SIGKILL",
+      env: { ...process.env, FORCE_COLOR: "0" }, // Bug C (z minula): bez ANSI
+    }, (err, stdout, stderr) => {
+      runningJobs.delete(jobKey);
+      if (err) {
+        const stderrSnippet = (stderr || "").slice(0, 500);
+        return res.status(500).json({ error: `Exekuce selhala: ${err.message}` + (stderrSnippet ? ` — ${stderrSnippet}` : "") });
+      }
       try {
         const data = JSON.parse(stdout);
         const payloads = data.result?.payloads || [];
         const text = payloads.map((p) => p.text || "").join("\n");
         res.json({ success: true, text, agent: task.name, project: name });
       } catch {
-        res.json({ success: true, text: stdout.slice(0, 1000), agent: task.name, project: name });
+        let text = (stdout || "").trim();
+        if (!text) text = "(Agent dokončil, ale nevrátil žádný výstup.)";
+        else if (text.length > 2000) text = text.slice(0, 2000) + "\n[... truncated]";
+        res.json({ success: true, text, agent: task.name, project: name });
       }
     });
   });

@@ -1,12 +1,23 @@
 // ===== Routes: Roadmap Executor (autonomní dokončování tasků) =====
-// S ochranou proti loopu a plýtvání tokeny.
 module.exports = function registerExecutor(app, deps) {
-  const { requireAuth, isSafeName, findNextTask, executeOneTask, executeAllTasks, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, getExecutionState, resetExecutionState } = deps;
+  const {
+    requireAuth, isSafeName,
+    findNextTask, executeOneTask, executeAllTasks,
+    enqueueProjectTasks, startQueueWorker,
+    getQueueState, pauseQueue, resumeQueue,
+    getExecutionState, resetExecutionState,
+  } = deps;
 
-  // Rate limiting — max 1 paralelní exekuce (pro run/run-all)
-  let running = false;
+  // Bug 3: Promise-based mutex místo boolean flag
+  // (zabraňuje race condition mezi run/run-all paralelními requesty)
+  let executionLock = Promise.resolve();
+  function withLock(fn) {
+    const next = executionLock.then(fn, fn);
+    executionLock = next.catch(() => {}); // zabrání, aby rejection propagoval dál
+    return next;
+  }
 
-  // Zjistí, jaký je další nehotový task v projektu
+  // Další nehotový task v projektu
   app.get("/api/executor/next/:project", (req, res) => {
     const { project } = req.params;
     if (!isSafeName(project)) return res.status(400).json({ error: "Invalid project name" });
@@ -15,72 +26,67 @@ module.exports = function registerExecutor(app, deps) {
     res.json({ done: false, ...next });
   });
 
-  // Stav exekuce (monitoring)
   app.get("/api/executor/state", (req, res) => {
     res.json({ ...getExecutionState(), ...getQueueState() });
   });
 
-  // Reset exekučního stavu (pro novou session)
   app.post("/api/executor/reset", requireAuth, (req, res) => {
     resetExecutionState();
     res.json({ success: true, message: "Exekuční stav resetován" });
   });
 
-  // Spustí autonomní dokončení jednoho tasku
+  // Spustí JEDEN task (synchronní odpověď)
   app.post("/api/executor/run/:project", requireAuth, (req, res) => {
     const { project } = req.params;
     if (!isSafeName(project)) return res.status(400).json({ error: "Invalid project name" });
-    if (running) return res.status(429).json({ error: "Exekuce už běží. Počkejte na dokončení." });
 
-    running = true;
-    executeOneTask(project, (err, result) => {
-      running = false;
-      if (err) return res.status(400).json({ error: err.message });
-      res.json(result);
-    });
+    withLock(() => new Promise((resolve, reject) => {
+      executeOneTask(project, (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      });
+    }))
+      .then((result) => res.json(result))
+      .catch((err) => res.status(400).json({ error: err.message }));
   });
 
-  // Spustí dokončení VŠECH tasků (sekvenčně, s budget limitem)
+  // Bug 10: /run-all je teď NON-BLOKUJÍCÍ — zařadí do fronty a vrátí se
   app.post("/api/executor/run-all/:project", requireAuth, (req, res) => {
     const { project } = req.params;
     if (!isSafeName(project)) return res.status(400).json({ error: "Invalid project name" });
-    if (running) return res.status(429).json({ error: "Exekuce už běží." });
 
-    running = true;
-    executeAllTasks(project, (err, result) => {
-      running = false;
-      if (err) return res.status(400).json({ error: err.message });
-      res.json(result);
-    });
+    const added = enqueueProjectTasks(project);
+    if (added === 0) {
+      return res.json({ success: true, queued: 0, message: "Žádné nové tasky (vše hotové nebo ve frontě)" });
+    }
+
+    startQueueWorker();
+    res.json({ success: true, queued: added, message: `${added} tasků zařazeno do fronty (poll /api/executor/queue pro stav)` });
   });
 
-  // ===== QUEUE — zpracování na pozadí (neblokující) =====
+  // ===== QUEUE =====
 
-  // Pozastaví zpracování fronty
   app.post("/api/executor/queue/pause", requireAuth, (req, res) => {
     res.json(pauseQueue());
   });
 
-  // Obnoví zpracování fronty
   app.post("/api/executor/queue/resume", requireAuth, (req, res) => {
     res.json(resumeQueue());
   });
 
-  // Naplní frontu všemi nehotovými tasky a spustí worker (vrátí okamžitě)
+  // Naplní frontu všemi nehotovými tasky projektu
   app.post("/api/executor/queue/:project", requireAuth, (req, res) => {
     const { project } = req.params;
     if (!isSafeName(project)) return res.status(400).json({ error: "Invalid project name" });
 
     const added = enqueueProjectTasks(project);
     if (added === 0) {
-      return res.json({ success: true, queued: 0, message: "Žádné nové tasky k zařazení (vše hotové nebo už ve frontě)" });
+      return res.json({ success: true, queued: 0, message: "Žádné nové tasky k zařazení" });
     }
-
     startQueueWorker();
     res.json({ success: true, queued: added, message: `${added} tasků zařazeno do fronty` });
   });
 
-  // Stav fronty (pro UI polling)
   app.get("/api/executor/queue", (req, res) => {
     res.json(getQueueState());
   });
