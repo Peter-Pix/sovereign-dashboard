@@ -44,15 +44,39 @@ function isValidServerName(name) {
   return typeof name === "string" && NAME_RE.test(name);
 }
 
+// ── Krátkodobý cache (TLT) — openclaw CLI má ~3.5s studený start,
+// takže opakované dotazy bez cache trvají 7s+. Cache drží list+status
+// 30s, probe vždy čerstvý (žádná cache pro mutace).
+const CACHE_TTL_MS = 30 * 1000;
+const _cache = {
+  list: { at: 0, value: null },
+  status: { at: 0, value: null },
+};
+function cached(key, fn) {
+  const now = Date.now();
+  if (_cache[key] && _cache[key].value !== null && now - _cache[key].at < CACHE_TTL_MS) {
+    return Promise.resolve(_cache[key].value);
+  }
+  return fn().then((val) => {
+    _cache[key] = { at: Date.now(), value: val };
+    return val;
+  });
+}
+function invalidate() {
+  _cache.list = { at: 0, value: null };
+  _cache.status = { at: 0, value: null };
+}
+
 // ── Veřejné API ─────────────────────────────────────────────────────────
 
 /** List všech MCP serverů (z OpenClaw registru). */
 async function listServers() {
-  const { stdout } = await execOpenclawJson(["mcp", "list", "--json"]);
-  // `openclaw mcp list --json` vrací objekt {name: def}, ne pole.
-  // Normalizuj na pole objektů {name, ...def}.
-  if (!stdout || typeof stdout !== "object") return [];
-  return Object.entries(stdout).map(([name, def]) => ({ name, ...def }));
+  return cached("list", () => {
+    return execOpenclawJson(["mcp", "list", "--json"]).then(({ stdout }) => {
+      if (!stdout || typeof stdout !== "object") return [];
+      return Object.entries(stdout).map(([name, def]) => ({ name, ...def }));
+    });
+  });
 }
 
 /**
@@ -74,12 +98,11 @@ async function getServer(name) {
  * Vrací pole {name, configured, enabled, ok, transport, authStatus, ...}
  */
 async function statusServers() {
-  try {
-    const { stdout } = await execOpenclawJson(["mcp", "status", "--json"]);
-    return stdout?.servers || [];
-  } catch {
-    return [];
-  }
+  return cached("status", () => {
+    return execOpenclawJson(["mcp", "status", "--json"])
+      .then(({ stdout }) => stdout?.servers || [])
+      .catch(() => []);
+  });
 }
 
 /**
@@ -91,6 +114,7 @@ async function upsertServer(name, def) {
   if (!isValidServerName(name)) throw new Error(`Neplatný název serveru: ${name}`);
   const json = JSON.stringify(def);
   const { stdout } = await execOpenclaw(["mcp", "set", name, json]);
+  invalidate();
   return { ok: true, name, stdout };
 }
 
@@ -98,6 +122,7 @@ async function upsertServer(name, def) {
 async function removeServer(name) {
   if (!isValidServerName(name)) throw new Error(`Neplatný název serveru: ${name}`);
   await execOpenclaw(["mcp", "unset", name]);
+  invalidate();
   return { ok: true, name };
 }
 
