@@ -1,9 +1,9 @@
 // ===== Routes: Roadmap Executor (autonomní dokončování tasků) =====
 // S ochranou proti loopu a plýtvání tokeny.
 module.exports = function registerExecutor(app, deps) {
-  const { requireAuth, isSafeName, findNextTask, executeOneTask, executeAllTasks, getExecutionState, resetExecutionState } = deps;
+  const { requireAuth, isSafeName, findNextTask, executeOneTask, executeAllTasks, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, getExecutionState, resetExecutionState } = deps;
 
-  // Rate limiting — max 1 paralelní exekuce
+  // Rate limiting — max 1 paralelní exekuce (pro run/run-all)
   let running = false;
 
   // Zjistí, jaký je další nehotový task v projektu
@@ -17,7 +17,7 @@ module.exports = function registerExecutor(app, deps) {
 
   // Stav exekuce (monitoring)
   app.get("/api/executor/state", (req, res) => {
-    res.json(getExecutionState());
+    res.json({ ...getExecutionState(), ...getQueueState() });
   });
 
   // Reset exekučního stavu (pro novou session)
@@ -52,5 +52,36 @@ module.exports = function registerExecutor(app, deps) {
       if (err) return res.status(400).json({ error: err.message });
       res.json(result);
     });
+  });
+
+  // ===== QUEUE — zpracování na pozadí (neblokující) =====
+
+  // Pozastaví zpracování fronty
+  app.post("/api/executor/queue/pause", requireAuth, (req, res) => {
+    res.json(pauseQueue());
+  });
+
+  // Obnoví zpracování fronty
+  app.post("/api/executor/queue/resume", requireAuth, (req, res) => {
+    res.json(resumeQueue());
+  });
+
+  // Naplní frontu všemi nehotovými tasky a spustí worker (vrátí okamžitě)
+  app.post("/api/executor/queue/:project", requireAuth, (req, res) => {
+    const { project } = req.params;
+    if (!isSafeName(project)) return res.status(400).json({ error: "Invalid project name" });
+
+    const added = enqueueProjectTasks(project);
+    if (added === 0) {
+      return res.json({ success: true, queued: 0, message: "Žádné nové tasky k zařazení (vše hotové nebo už ve frontě)" });
+    }
+
+    startQueueWorker();
+    res.json({ success: true, queued: added, message: `${added} tasků zařazeno do fronty` });
+  });
+
+  // Stav fronty (pro UI polling)
+  app.get("/api/executor/queue", (req, res) => {
+    res.json(getQueueState());
   });
 };

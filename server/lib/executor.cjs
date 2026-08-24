@@ -22,6 +22,11 @@ const executionState = {
   taskAttempts: new Map(),     // taskKey → počet pokusů
   stuckTasks: new Set(),       // taskKey, které se nepodařilo odškrtnout
   lastExecutionAt: 0,          // timestamp poslední exekuce
+  queue: [],                   // fronta tasků čekajících na zpracování
+  current: null,               // aktuálně běžící task
+  queueLog: [],                // historie zpracovaných tasků (pro UI)
+  workerRunning: false,        // jestli worker běží
+  paused: false,               // jestli je fronta pozastavená
 };
 
 function taskKey(project, taskText) {
@@ -251,6 +256,11 @@ function resetExecutionState() {
   executionState.taskAttempts.clear();
   executionState.stuckTasks.clear();
   executionState.lastExecutionAt = 0;
+  executionState.queue = [];
+  executionState.current = null;
+  executionState.queueLog = [];
+  executionState.workerRunning = false;
+  executionState.paused = false;
 }
 
 // Vrátí aktuální stav (pro monitoring)
@@ -263,6 +273,139 @@ function getExecutionState() {
   };
 }
 
+// ===== QUEUE — zpracování tasků na pozadí =====
+
+// Naplní frontu všemi nehotovými tasky projektu (neblokuje)
+function enqueueProjectTasks(projectName) {
+  const projectDir = path.join(config.PROJECTS_DIR, projectName);
+  const files = findRoadmapFiles(projectDir);
+  if (files.length === 0) return 0;
+
+  let added = 0;
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(projectDir, file), "utf8");
+    const parsed = parseRoadmap(content);
+    for (const phase of parsed.phases) {
+      for (const item of phase.items) {
+        if (item.done) continue;
+        const key = taskKey(projectName, item.text);
+        if (executionState.stuckTasks.has(key)) continue;
+        const attempts = executionState.taskAttempts.get(key) || 0;
+        if (attempts > LIMITS.MAX_RETRIES_PER_TASK) continue;
+        // Přeskoč, pokud už je ve frontě
+        if (executionState.queue.some((q) => q.key === key)) continue;
+
+        executionState.queue.push({
+          key,
+          project: projectName,
+          file,
+          phase: phase.title,
+          task: item.text,
+          agent: routeTaskToAgent(item.text),
+        });
+        added++;
+      }
+    }
+  }
+  return added;
+}
+
+// Worker — zpracovává frontu po jednom tasku
+function startQueueWorker() {
+  if (executionState.workerRunning) return;
+  executionState.workerRunning = true;
+
+  const processNext = () => {
+    // Zastav, pokud je fronta pozastavená
+    if (executionState.paused) {
+      executionState.workerRunning = false;
+      return;
+    }
+    // Zastav, pokud je fronta prázdná
+    if (executionState.queue.length === 0) {
+      executionState.workerRunning = false;
+      executionState.current = null;
+      return;
+    }
+
+    const check = canExecute();
+    if (!check.ok) {
+      // Budget/cooldown — počkej a zkus znovu
+      setTimeout(processNext, LIMITS.COOLDOWN_MS);
+      return;
+    }
+
+    const item = executionState.queue.shift();
+    executionState.current = item;
+    executionState.totalExecutions++;
+    executionState.lastExecutionAt = Date.now();
+    executionState.taskAttempts.set(item.key, (executionState.taskAttempts.get(item.key) || 0) + 1);
+
+    console.log(`[Executor] (queue) Spouštím ${item.agent} na: "${item.task}"`);
+
+    runTaskAgent(item.agent, item.project, item.task, (err, result) => {
+      if (err) {
+        executionState.queueLog.unshift({
+          task: item.task,
+          agent: item.agent,
+          status: "failed",
+          error: err.message,
+          at: new Date().toISOString(),
+        });
+      } else {
+        const marked = markTaskDone(item.project, item.file, item.task);
+        if (marked) {
+          executionState.queueLog.unshift({
+            task: item.task,
+            agent: item.agent,
+            status: "done",
+            at: new Date().toISOString(),
+          });
+        } else {
+          executionState.stuckTasks.add(item.key);
+          executionState.queueLog.unshift({
+            task: item.task,
+            agent: item.agent,
+            status: "stuck",
+            at: new Date().toISOString(),
+          });
+        }
+      }
+      // Omez log na posledních 50 záznamů
+      if (executionState.queueLog.length > 50) executionState.queueLog.length = 50;
+
+      executionState.current = null;
+      setTimeout(processNext, LIMITS.COOLDOWN_MS);
+    });
+  };
+
+  processNext();
+}
+
+// Vrátí stav fronty (pro UI polling)
+function getQueueState() {
+  return {
+    queueLength: executionState.queue.length,
+    current: executionState.current,
+    log: executionState.queueLog,
+    workerRunning: executionState.workerRunning,
+    paused: executionState.paused,
+  };
+}
+
+// Pozastaví zpracování fronty
+function pauseQueue() {
+  executionState.paused = true;
+  return { paused: true };
+}
+
+// Obnoví zpracování fronty
+function resumeQueue() {
+  executionState.paused = false;
+  startQueueWorker();
+  return { paused: false };
+}
+
 module.exports = {
   routeTaskToAgent,
   findNextTask,
@@ -270,6 +413,11 @@ module.exports = {
   runTaskAgent,
   executeOneTask,
   executeAllTasks,
+  enqueueProjectTasks,
+  startQueueWorker,
+  getQueueState,
+  pauseQueue,
+  resumeQueue,
   resetExecutionState,
   getExecutionState,
   LIMITS,

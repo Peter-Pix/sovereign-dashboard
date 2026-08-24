@@ -1,4 +1,4 @@
-// Roadmapy — přehled roadmap napříč projekty + autonomní exekuce.
+// Roadmapy — přehled roadmap napříč projekty + autonomní exekuce (queue).
 import { useState, useEffect } from "react";
 import { API } from "../config";
 import Spinner from "./Spinner";
@@ -42,9 +42,8 @@ function RoadmapDetail({ project, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [nextTask, setNextTask] = useState(null);
+  const [queueState, setQueueState] = useState(null);
   const [executing, setExecuting] = useState(false);
-  const [execStartedAt, setExecStartedAt] = useState(null);
   const [execResult, setExecResult] = useState(null);
 
   const loadDetail = () => {
@@ -60,31 +59,26 @@ function RoadmapDetail({ project, onBack }) {
       });
   };
 
-  const loadNext = () => {
-    fetch(`${API}/api/executor/next/${project}`)
-      .then((r) => r.json())
-      .then((d) => setNextTask(d))
-      .catch(() => setNextTask(null));
-  };
-
+  // Poll queue state každé 2s
   useEffect(() => {
-    fetch(`${API}/api/roadmaps/${project}`)
-      .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); })
-      .catch((e) => { setError(e.message); setLoading(false); });
-    fetch(`${API}/api/executor/next/${project}`)
-      .then((r) => r.json())
-      .then((d) => setNextTask(d))
-      .catch(() => setNextTask(null));
+    loadDetail();
+    const poll = () => {
+      fetch(`${API}/api/executor/state`)
+        .then((r) => r.json())
+        .then((d) => setQueueState(d))
+        .catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
 
-  const runNextTask = async () => {
+  const runQueue = async () => {
     setExecuting(true);
-    setExecStartedAt(Date.now());
     setExecResult(null);
     try {
-      const res = await fetch(`${API}/api/executor/run/${project}`, {
+      const res = await fetch(`${API}/api/executor/queue/${project}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -93,9 +87,6 @@ function RoadmapDetail({ project, onBack }) {
       });
       const d = await res.json();
       setExecResult(d);
-      // Po dokončení znovu načti detail + next task
-      loadDetail();
-      loadNext();
     } catch {
       setExecResult({ error: "Síťová chyba" });
     } finally {
@@ -103,9 +94,19 @@ function RoadmapDetail({ project, onBack }) {
     }
   };
 
+  const togglePause = async () => {
+    const action = queueState?.paused ? "resume" : "pause";
+    await fetch(`${API}/api/executor/queue/${action}`, {
+      method: "POST",
+      headers: { "x-auth-token": import.meta.env.VITE_AUTH_TOKEN },
+    });
+  };
+
   if (loading) return <p className="text-[#5c5c5c]">Načítám roadmapu...</p>;
   if (error) return <p className="text-[#e85d5d]">Chyba: {error}</p>;
   if (!data || data.roadmaps.length === 0) return <p className="text-[#5c5c5c]">Žádná roadmapa.</p>;
+
+  const isWorking = queueState?.workerRunning || queueState?.queueLength > 0;
 
   return (
     <div className="space-y-4">
@@ -113,38 +114,74 @@ function RoadmapDetail({ project, onBack }) {
         ← Zpět na přehled
       </button>
 
-      {/* Autonomní exekuce */}
+      {/* Autonomní exekuce — queue */}
       <div className="bg-[#0d0d0d] border border-[#C89B3C]/30 rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">
             🤖 Autonomní exekuce
           </h3>
         </div>
-        {nextTask && !nextTask.done ? (
-          <div className="space-y-2">
-            <p className="text-[11px] text-[#9d9d9d]">
-              Další task: <span className="text-[#e8e8e8]">"{nextTask.task}"</span>
-            </p>
-            <p className="text-[10px] text-[#5c5c5c]">
-              Agent: <span className="text-[#C89B3C]">{nextTask.agent}</span> · Fáze: {nextTask.phase}
-            </p>
-            <button
-              onClick={runNextTask}
-              disabled={executing}
-              className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-50 transition-colors"
-            >
-              {executing ? <Spinner label="Agent pracuje" startedAt={execStartedAt} /> : "▶ Spustit agenta na tento task"}
-            </button>
+
+        {/* Queue status */}
+        {isWorking && (
+          <div className="mb-3 p-3 bg-[#111] border border-[#232323] rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] text-[#9d9d9d]">
+                {queueState?.current ? (
+                  <>Běží: <span className="text-[#e8e8e8]">"{queueState.current.task}"</span></>
+                ) : (
+                  "Fronta zpracovávána..."
+                )}
+              </span>
+              <Spinner label="pracuji" />
+            </div>
+            {queueState?.queueLength > 0 && (
+              <p className="text-[10px] text-[#5c5c5c] mb-2">
+                Zbývá {queueState.queueLength} tasků ve frontě
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={togglePause}
+                className="text-[10px] px-2 py-1 rounded-md border border-[#232323] text-[#9d9d9d] hover:text-[#C89B3C] hover:border-[#C89B3C] transition-colors"
+              >
+                {queueState?.paused ? "▶ Pokračovat" : "⏸ Pozastavit"}
+              </button>
+            </div>
           </div>
-        ) : (
-          <p className="text-[11px] text-[#3ecf8e]">✅ Všechny tasky hotové</p>
         )}
+
+        {/* Spustit celý list */}
+        <button
+          onClick={runQueue}
+          disabled={executing || isWorking}
+          className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-50 transition-colors"
+        >
+          {executing ? "Zařazuji..." : "▶ Spustit celý task list"}
+        </button>
 
         {execResult && (
           <div className={`mt-3 p-3 rounded-md text-[11px] ${execResult.success ? "bg-[rgba(62,207,142,0.1)] text-[#3ecf8e]" : "bg-[rgba(232,93,93,0.1)] text-[#e85d5d]"}`}>
             {execResult.success
-              ? `✅ Task dokončen: "${execResult.task}" (agent: ${execResult.agent})`
-              : `❌ Chyba: ${execResult.error || "Neznámá chyba"}`}
+              ? `✅ ${execResult.queued} tasků zařazeno do fronty`
+              : `❌ ${execResult.error || execResult.message || "Chyba"}`}
+          </div>
+        )}
+
+        {/* Queue log */}
+        {queueState?.log?.length > 0 && (
+          <div className="mt-3 border-t border-[#232323] pt-2">
+            <p className="text-[10px] text-[#5c5c5c] uppercase tracking-wider mb-1">Průběh</p>
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {queueState.log.slice(0, 10).map((entry, i) => (
+                <p key={i} className="text-[10px] font-mono">
+                  <span className={entry.status === "done" ? "text-[#3ecf8e]" : entry.status === "failed" ? "text-[#e85d5d]" : "text-[#e5b34b]"}>
+                    {entry.status === "done" ? "✓" : entry.status === "failed" ? "✘" : "⚠"}
+                  </span>{" "}
+                  <span className="text-[#9d9d9d]">{entry.task}</span>
+                </p>
+              ))}
+            </div>
           </div>
         )}
       </div>

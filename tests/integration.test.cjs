@@ -185,3 +185,27 @@ test("POST /api/executor/reset bez auth → 401", async () => {
   const res = await fetch(`${BASE}/api/executor/reset`, { method: "POST" });
   assert.strictEqual(res.status, 401);
 });
+
+test("GET /api/executor/state vrací queue stav", async () => {
+  const res = await fetch(`${BASE}/api/executor/state`);
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.ok("queueLength" in body);
+  assert.ok("paused" in body);
+  assert.ok("workerRunning" in body);
+});
+
+test("POST /api/executor/queue/pause bez auth → 401", async () => {
+  const res = await fetch(`${BASE}/api/executor/queue/pause`, { method: "POST" });
+  assert.strictEqual(res.status, 401);
+});
+
+test("POST /api/executor/queue/resume bez auth → 401", async () => {
+  const res = await fetch(`${BASE}/api/executor/queue/resume`, { method: "POST" });
+  assert.strictEqual(res.status, 401);
+});
+
+test("POST /api/executor/queue/:project bez auth → 401", async () => {
+  const res = await fetch(`${BASE}/api/executor/queue/okeye`, { method: "POST" });
+  assert.strictEqual(res.status, 401);
+});

@@ -144,3 +144,27 @@ test("formatElapsed: formátuje elapsed time", async () => {
   assert.strictEqual(formatElapsed(125000), "2m 5s");
   assert.strictEqual(formatElapsed(60000), "1m 0s");
 });
+
+// ===== Executor Queue =====
+const { enqueueProjectTasks, getQueueState, pauseQueue, resumeQueue, resetExecutionState: resetQueue } = require("../server/lib/executor.cjs");
+
+test("getQueueState: vrací stav fronty", () => {
+  resetQueue();
+  const state = getQueueState();
+  assert.strictEqual(state.queueLength, 0);
+  assert.strictEqual(state.current, null);
+  assert.strictEqual(state.workerRunning, false);
+  assert.strictEqual(state.paused, false);
+  assert.ok(Array.isArray(state.log));
+});
+
+test("pauseQueue/resumeQueue: přepíná paused flag", () => {
+  resetQueue();
+  const paused = pauseQueue();
+  assert.strictEqual(paused.paused, true);
+  assert.strictEqual(getQueueState().paused, true);
+
+  const resumed = resumeQueue();
+  assert.strictEqual(resumed.paused, false);
+  assert.strictEqual(getQueueState().paused, false);
+});
