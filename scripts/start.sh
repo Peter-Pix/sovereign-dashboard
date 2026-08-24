@@ -67,3 +67,11 @@ done
 
 echo "⚠️ Backend se nespustil do 5s. Zkontroluj $LOG_FILE"
 exit 1
+
+# Načti token z .env (pro health checky a debugging)
+load_token() {
+  TOKEN_FILE="$(dirname "$0")/../.env"
+  if [[ -f "$TOKEN_FILE" ]]; then
+    grep "^SOVEREIGN_AUTH_TOKEN=" "$TOKEN_FILE" 2>/dev/null | cut -d= -f2-
+  fi
+}

@@ -72,6 +72,17 @@ Buď věcný a stručný. Identifikuj, co je hotové a co je blokované.`,
   },
 };
 
+
+// ANSI strip + chunk buffering pro clean stream
+function stripAnsi(raw) {
+  if (!raw) return "";
+  let text = raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+  text = text.replace(/[⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳↻⚡🌐📡💬📝🔍✅❌✗✘×+\-*/\\|‣▪▸▸►]/g, "");
+  text = text.replace(/^[\s⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳\->\\|\\/]+$/gm, "");
+  text = text.split("\n").map(l => l.trimEnd()).join("\n").trim();
+  return text;
+}
+
 // Spustí exekuci agenta přes OpenClaw agenta (main) — klasický buffer-based režim
 function runAgentExe(agentName, callback) {
   const task = AGENT_TASKS[agentName];
@@ -146,9 +157,40 @@ function runAgentStream(agentName, handlers = {}) {
 
   let stdoutBuffer = "";
 
-  child.stdout.on("data", (chunk) => {
+  // Buffer pro řádkové dělení
+  let lineBuffer = "";
+
+  child.stdout.on("data", (rawChunk) => {
+    const chunk = stripAnsi(rawChunk);
     stdoutBuffer += chunk;
-    if (onStdout) onStdout(chunk);
+
+    if (!chunk || !onStdout) return;
+
+    // Pokusíme se flushnout kompletní řádky z bufferu
+    const parts = chunk.split("\n");
+    const isPartial = chunk.endsWith("\n") === false && !rawChunk.endsWith("\n");
+
+    // Všechny kromě posledního (pokud není kompletní) jsou kompletní řádky
+    const complete = isPartial ? parts.slice(0, -1) : parts;
+
+    for (const line of complete) {
+      const flushed = lineBuffer + line;
+      if (flushed) onStdout(flushed + "\n");
+      lineBuffer = "";
+    }
+
+    // Poslední část (nekompletní řádek) jde do bufferu
+    if (isPartial && parts.length > 0) {
+      lineBuffer += parts[parts.length - 1];
+    } else if (!chunk.includes("\n") && chunk) {
+      // Jeden celý chunk bez nového řádku
+      lineBuffer += chunk;
+      // Flush pokud je buffer příliš velký (žádný newline za 500 znaků)
+      if (lineBuffer.length > 500) {
+        onStdout(lineBuffer);
+        lineBuffer = "";
+      }
+    }
   });
 
   child.stderr.on("data", (chunk) => {

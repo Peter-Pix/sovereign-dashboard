@@ -87,12 +87,16 @@ module.exports = function registerAgents(app, deps) {
     };
 
     // Heartbeat každých 8s — udrží spojení živé a dá UI vědět, že nezamrzlo
+    // Heartbeat každých 8s — udrží spojení živé a dá UI vědět, že je aktivní
+    // Plus extra heartbeat když je 7s+ bez dat (skutečná idle)
+    let lastHeartbeatAt = Date.now();
     const heartbeat = setInterval(() => {
       if (res.writableEnded) return;
-      const idle = Date.now() - lastActivity;
-      if (idle >= 7000) {
-        send("heartbeat", { idleMs: idle });
-      }
+      const now = Date.now();
+      const idle = now - lastActivity;
+      // Standard heartbeat každých 8s s info o idle
+      send("heartbeat", { idleMs: idle, sinceLastHeartbeat: now - lastHeartbeatAt });
+      lastHeartbeatAt = now;
     }, 8000);
 
     const cleanupStream = () => {
@@ -122,7 +126,7 @@ module.exports = function registerAgents(app, deps) {
       },
       onDone: (result) => {
         send("done", {
-          text: result.text.slice(0, 5000), // strih pro SSE
+          text: stripAnsi(result.text).slice(0, 5000), // strih pro SSE
           tokens: result.tokens,
           agent: result.agent,
         });

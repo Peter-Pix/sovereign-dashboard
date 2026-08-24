@@ -40,7 +40,7 @@ function ModelSwitcher() {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(`${API}/api/config/model`);
+        const res = await fetch(`${API}/api/config/model`, { headers: authHeaders() });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (mounted) {
