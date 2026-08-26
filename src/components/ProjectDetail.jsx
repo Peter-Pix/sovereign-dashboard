@@ -11,6 +11,22 @@ export default function ProjectDetail({ projectName, onBack }) {
   const [bugSeverity, setBugSeverity] = useState("medium");
   const [bugSaving, setBugSaving] = useState(false);
   const [bugError, setBugError] = useState(null);
+  const [execState, setExecState] = useState({ perProject: {}, slots: { total: 3, used: 0 }, active: [] });
+  const [executing, setExecuting] = useState(false);
+  const [execResult, setExecResult] = useState(null);
+
+  // Poll stav exekuce pro tento projekt
+  useEffect(() => {
+    const poll = () => {
+      fetch(`${API}/api/executor/state`)
+        .then((r) => r.json())
+        .then((d) => setExecState(d))
+        .catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => clearInterval(id);
+  }, [projectName]);
 
   useEffect(() => {
     if (!projectName) return;
@@ -56,6 +72,30 @@ export default function ProjectDetail({ projectName, onBack }) {
     navigator.clipboard.writeText(text);
   };
 
+  // Spustí roadmap queue pro tento projekt
+  const runQueue = async () => {
+    setExecuting(true);
+    setExecResult(null);
+    try {
+      const res = await fetch(`${API}/api/executor/queue/${encodeURIComponent(projectName)}`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+      });
+      const d = await res.json();
+      setExecResult(d);
+    } catch {
+      setExecResult({ error: "Síťová chyba" });
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  const runningHere = execState.perProject?.[projectName] || 0;
+  const slotsUsed = execState.slots?.used || 0;
+  const slotsTotal = execState.slots?.total || 3;
+  const allSlotsFull = slotsUsed >= slotsTotal;
+  const activeHere = (execState.active || []).filter((a) => a.project === projectName);
+
   if (loading) return <p className="text-[#5c5c5c]">Načítám detail...</p>;
   if (!project) return <p className="text-[#e85d5d]">Projekt nenalezen</p>;
 
@@ -83,6 +123,57 @@ export default function ProjectDetail({ projectName, onBack }) {
         </div>
         <p className="text-sm text-[#9d9d9d]">{project.lastMsg}</p>
         <p className="text-xs text-[#5c5c5c] mt-1">Hash: {project.lastHash}</p>
+      </div>
+
+      {/* Aktivní exekuce roadmap */}
+      <div className="bg-[#111] border border-[#232323] rounded-xl p-6 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-[#C89B3C] uppercase tracking-wider">
+            🤖 Aktivní exekuce
+          </h3>
+          <span className="text-[10px] font-mono text-[#5c5c5c]">
+            sloty {slotsUsed}/{slotsTotal}
+            {allSlotsFull && <span className="text-[#e85d5d]"> · plné</span>}
+          </span>
+        </div>
+
+        {activeHere.length > 0 ? (
+          <div className="space-y-1.5 mb-3">
+            {activeHere.map((a, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                <span className="text-[#C89B3C] shrink-0">▶</span>
+                <span className="text-[#e8e8e8]">"{a.task}"</span>
+                <span className="text-[#5c5c5c] font-mono shrink-0 ml-auto">{a.agent}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-[#5c5c5c] mb-3">
+            {runningHere > 0
+              ? `${runningHere} agent${runningHere > 1 ? "i" : ""} běží na jiném projektu`
+              : "Žádné aktivní exekuce na tomto projektu."}
+          </p>
+        )}
+
+        {/* Tlačítko spustit roadmap — disabled, když jsou všechny sloty plné */}
+        <button
+          onClick={runQueue}
+          disabled={executing || allSlotsFull}
+          className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {executing
+            ? "Zařazuji..."
+            : allSlotsFull
+              ? `Všechny sloty plné (${slotsUsed}/${slotsTotal})`
+              : "▶ Spustit roadmap"}
+        </button>
+        {execResult && (
+          <div className={`mt-3 p-3 rounded-md text-[11px] ${execResult.success ? "bg-[rgba(62,207,142,0.1)] text-[#3ecf8e]" : "bg-[rgba(232,93,93,0.1)] text-[#e85d5d]"}`}>
+            {execResult.success
+              ? `✅ ${execResult.queued} tasků zařazeno do fronty`
+              : `❌ ${execResult.error || execResult.message || "Chyba"}`}
+          </div>
+        )}
       </div>
 
       {/* Bug tickets */}

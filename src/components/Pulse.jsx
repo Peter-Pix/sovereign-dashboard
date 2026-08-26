@@ -12,6 +12,7 @@ export default function Pulse({ onSelectProject }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [execState, setExecState] = useState({ perProject: {}, slots: { total: 3, used: 0 } });
 
   useEffect(() => {
     cachedFetch(`${API}/api/projects`)
@@ -24,6 +25,23 @@ export default function Pulse({ onSelectProject }) {
         setLoading(false);
       });
   }, []);
+
+  // Poll stav exekuce (běžící agenti per projekt) pro badge
+  useEffect(() => {
+    const poll = () => {
+      fetch(`${API}/api/executor/state`)
+        .then((r) => r.json())
+        .then((d) => setExecState(d))
+        .catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => clearInterval(id);
+  }, []);
+
+  const slotsUsed = execState.slots?.used || 0;
+  const slotsTotal = execState.slots?.total || 3;
+  const allSlotsFull = slotsUsed >= slotsTotal;
 
   if (loading) return <p className="text-[#5c5c5c]">Načítám projekty...</p>;
   if (error) return <p className="text-[#e85d5d]">Chyba: {error}</p>;
@@ -45,6 +63,26 @@ export default function Pulse({ onSelectProject }) {
             />
             <span className="text-[#9d9d9d]">{p.lastCommit}</span>
             {p.dirty && <span className="text-[#e5b34b] ml-auto">dirty</span>}
+          </div>
+          {/* Běžící agenti — projekty bez aktivních akcí ukáží jen počet */}
+          <div className="flex items-center gap-2 mt-2">
+            {(() => {
+              const running = execState.perProject?.[p.name] || 0;
+              return running > 0 ? (
+                <span className="text-[10px] font-mono text-[#C89B3C] bg-[rgba(200,155,60,0.12)] border border-[rgba(200,155,60,0.3)] rounded px-1.5 py-0.5">
+                  ● {running} agent{running > 1 ? "i" : ""} běží
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono text-[#5c5c5c]">
+                  0 agentů běží
+                </span>
+              );
+            })()}
+            {allSlotsFull && (
+              <span className="text-[10px] font-mono text-[#e85d5d] ml-auto">
+                sloty plné
+              </span>
+            )}
           </div>
           <p className="text-xs text-[#5c5c5c] mt-2 truncate">{p.lastMsg}</p>
         </div>

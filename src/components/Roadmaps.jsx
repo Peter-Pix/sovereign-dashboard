@@ -12,7 +12,7 @@ function ProgressBar({ pct }) {
   );
 }
 
-function RoadmapCard({ r, onSelect }) {
+function RoadmapCard({ r, onSelect, running = 0, slotsUsed = 0, slotsTotal = 3 }) {
   return (
     <button
       onClick={() => onSelect(r.project)}
@@ -31,7 +31,18 @@ function RoadmapCard({ r, onSelect }) {
         </span>
       </div>
       <ProgressBar pct={r.progress} />
-      <p className="text-[10px] text-[#5c5c5c] mt-2">
+      <div className="flex items-center justify-between mt-2">
+        {running > 0 ? (
+          <span className="text-[10px] font-mono text-[#C89B3C] bg-[rgba(200,155,60,0.12)] border border-[rgba(200,155,60,0.3)] rounded px-1.5 py-0.5">
+            ● {running} agent{running > 1 ? "i" : ""} běží ({slotsUsed}/{slotsTotal})
+          </span>
+        ) : (
+          <span className="text-[10px] font-mono text-[#5c5c5c]">
+            0 agentů běží
+          </span>
+        )}
+      </div>
+      <p className="text-[10px] text-[#5c5c5c] mt-1">
         {r.phases.length} fází · aktualizováno {new Date(r.updatedAt).toLocaleDateString("cs-CZ")}
       </p>
     </button>
@@ -107,6 +118,10 @@ function RoadmapDetail({ project, onBack }) {
   if (!data || data.roadmaps.length === 0) return <p className="text-[#5c5c5c]">Žádná roadmapa.</p>;
 
   const isWorking = queueState?.workerRunning || queueState?.queueLength > 0;
+  const slotsUsed = queueState?.slots?.used || 0;
+  const slotsTotal = queueState?.slots?.total || 3;
+  const allSlotsFull = slotsUsed >= slotsTotal; // všechny sloty obsazené → disabled
+  const activeTasks = queueState?.active || [];
 
   return (
     <div className="space-y-4">
@@ -127,14 +142,29 @@ function RoadmapDetail({ project, onBack }) {
           <div className="mb-3 p-3 bg-[#111] border border-[#232323] rounded-lg">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] text-[#9d9d9d]">
-                {queueState?.current ? (
-                  <>Běží: <span className="text-[#e8e8e8]">"{queueState.current.task}"</span></>
-                ) : (
-                  "Fronta zpracovávána..."
-                )}
+                Sloty: <span className="text-[#e8e8e8] font-semibold">{slotsUsed}/{slotsTotal}</span>
+                {allSlotsFull && <span className="ml-1 text-[#e85d5d]">· plné</span>}
               </span>
               <Spinner label="pracuji" />
             </div>
+
+            {/* VŠECHNY aktivní tasky (paralelní pool) */}
+            {activeTasks.length > 0 ? (
+              <div className="space-y-1.5 mb-2">
+                {activeTasks.map((a, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[11px]">
+                    <span className="text-[#C89B3C] shrink-0">▶</span>
+                    <span className="text-[#e8e8e8]">"{a.task}"</span>
+                    <span className="text-[#5c5c5c] font-mono shrink-0 ml-auto">
+                      {a.agent}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] text-[#5c5c5c] mb-2">Fronta zpracovávána...</p>
+            )}
+
             {queueState?.queueLength > 0 && (
               <p className="text-[10px] text-[#5c5c5c] mb-2">
                 Zbývá {queueState.queueLength} tasků ve frontě
@@ -154,11 +184,20 @@ function RoadmapDetail({ project, onBack }) {
         {/* Spustit celý list */}
         <button
           onClick={runQueue}
-          disabled={executing || isWorking}
-          className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-50 transition-colors"
+          disabled={executing || isWorking || allSlotsFull}
+          className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {executing ? "Zařazuji..." : "▶ Spustit celý task list"}
+          {executing
+            ? "Zařazuji..."
+            : allSlotsFull
+              ? `Všechny sloty plné (${slotsUsed}/${slotsTotal})`
+              : "▶ Spustit celý task list"}
         </button>
+        {allSlotsFull && !executing && (
+          <p className="text-[10px] text-[#e85d5d] mt-2">
+            Všechny exekuční sloty jsou obsazené ({slotsUsed}/{slotsTotal}). Počkej na uvolnění.
+          </p>
+        )}
 
         {execResult && (
           <div className={`mt-3 p-3 rounded-md text-[11px] ${execResult.success ? "bg-[rgba(62,207,142,0.1)] text-[#3ecf8e]" : "bg-[rgba(232,93,93,0.1)] text-[#e85d5d]"}`}>
@@ -230,6 +269,7 @@ export default function Roadmaps() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [execState, setExecState] = useState({ perProject: {}, slots: { total: 3, used: 0 } });
 
   useEffect(() => {
     fetch(`${API}/api/roadmaps`)
@@ -242,6 +282,19 @@ export default function Roadmaps() {
         setError(e.message);
         setLoading(false);
       });
+  }, []);
+
+  // Poll stav exekuce (běžící agenti per projekt) — pro badge na kartách
+  useEffect(() => {
+    const poll = () => {
+      fetch(`${API}/api/executor/state`)
+        .then((r) => r.json())
+        .then((d) => setExecState(d))
+        .catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => clearInterval(id);
   }, []);
 
   if (loading) return <p className="text-[#5c5c5c]">Načítám roadmapy...</p>;
@@ -269,7 +322,14 @@ export default function Roadmaps() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {roadmaps.map((r) => (
-          <RoadmapCard key={`${r.project}-${r.file}`} r={r} onSelect={setSelected} />
+          <RoadmapCard
+            key={`${r.project}-${r.file}`}
+            r={r}
+            onSelect={setSelected}
+            running={execState.perProject?.[r.project] || 0}
+            slotsUsed={execState.slots?.used || 0}
+            slotsTotal={execState.slots?.total || 3}
+          />
         ))}
       </div>
     </div>
