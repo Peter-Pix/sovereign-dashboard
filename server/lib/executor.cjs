@@ -394,7 +394,7 @@ Buď konkrétní a věcný. Pracuj jen na tomto úkolu, ne na jiných.`;
     });
 }
 
-// ===== Orchestrace s ochranou proti loopu =====// ===== Orchestrace s ochranou proti loopu =====// ===== Orchestrace s ochranou proti loopu =====
+// ===== Orchestrace s ochranou proti loopu =====
 
 function canExecute() {
   if (executionState.totalExecutions >= LIMITS.MAX_TOTAL_EXECUTIONS) {
@@ -408,7 +408,7 @@ function canExecute() {
 }
 
 // ====================================================================
-// ORCHESTRATION — executeOneTask, executeAllTasks, queue
+// ORCHESTRATION — executeOneTask, queue (executeAllTasks odstraněn jako mrtvý kód)
 // Opraveno: chybějící oddělovač mezi fail (err) a success (null) cestou (viz Bug G)
 // ====================================================================
 function executeOneTask(projectName, callback) {
@@ -455,67 +455,6 @@ function executeOneTask(projectName, callback) {
       result: result.text?.slice(0, 500) || "Dokončeno",
     });
   });
-}
-
-function executeAllTasks(projectName, callback) {
-  const completed = [];
-  const failed = [];
-  const skipped = [];
-
-  const processNext = () => {
-    const check = canExecute();
-    if (!check.ok) {
-      return callback(null, { success: true, completed, failed, skipped, stopped: check.reason });
-    }
-    if (completed.length + failed.length >= LIMITS.MAX_TASKS_PER_RUN) {
-      return callback(null, { success: true, completed, failed, skipped, stopped: `Dosažen limit ${LIMITS.MAX_TASKS_PER_RUN} tasků na run` });
-    }
-
-    let next;
-    try {
-      next = findNextTask(projectName);
-    } catch (e) {
-      return callback(null, { success: false, error: e.message, completed, failed, skipped });
-    }
-    if (!next) {
-      return callback(null, { success: true, completed, failed, skipped, stopped: "Vše hotové" });
-    }
-
-    const key = taskKey(projectName, next.task);
-    executionState.totalExecutions++;
-    executionState.lastExecutionAt = Date.now();
-    boundedAdd(executionState.taskAttempts, key, (executionState.taskAttempts.get(key) || 0) + 1);
-
-    console.log(`[Executor] (run-all) Spouštím ${next.agent} na: "${next.task}"`);
-
-    runTaskAgent(next.agent, projectName, next.task, (err, result) => {
-      if (err) {
-        const category = err.message?.includes("timeout") || err.message?.includes("Timeout")
-          ? "timeout"
-          : (err.message?.includes("OLLAMA") || err.message?.includes("Bad Gateway") ? "upstream" : "internal");
-        failed.push({
-          task: next.task,
-          agent: next.agent,
-          error: err.message,
-          category,
-          retryable: category !== "internal",
-          at: new Date().toISOString(),
-        });
-      } else {
-        const marked = markTaskDone(projectName, next.file, next.task);
-        if (marked) {
-          completed.push({ task: next.task, agent: next.agent });
-          clearTaskAttempts(key);
-        } else {
-          boundedAdd(executionState.stuckTasks, key, true);
-          skipped.push({ task: next.task, reason: "Nepodařilo se odškrtnout (stuck)" });
-        }
-      }
-      setTimeout(processNext, LIMITS.COOLDOWN_MS);
-    });
-  };
-
-  processNext();
 }
 
 function resetExecutionState() {
@@ -859,7 +798,6 @@ module.exports = {
   normalizeTaskText,
   runTaskAgent,
   executeOneTask,
-  executeAllTasks,
   enqueueProjectTasks,
   startQueueWorker,
   getQueueState,
