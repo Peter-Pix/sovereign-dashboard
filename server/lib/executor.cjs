@@ -10,6 +10,7 @@ const { buildMcpContextSection } = require("./mcpContext.cjs");
 const { selfCorrect } = require("./selfCorrector.cjs");
 const config = require("../config.cjs");
 const { parseRoadmap, findRoadmapFiles } = require("./roadmaps.cjs");
+const { mergeProjectRoadmaps } = require("./roadmapMerge.cjs");
 const { AGENT_TASKS } = require("./agents.cjs");
 const { isSafeName } = require("./projects.cjs"); // použito pro validaci projectName
 
@@ -135,41 +136,29 @@ function routeTaskToAgent(taskText) {
 function findNextTask(projectName) {
   assertSafeProject(projectName);
 
-  const projectDir = path.join(config.PROJECTS_DIR, projectName);
-  const files = findRoadmapFiles(projectDir);
-  if (files.length === 0) return null;
+  // Dedup merge: projde VŠECHNY roadmap soubory, odstraní duplicity,
+  // vrátí jeden seznam s sources[] (kde se odškrtne). Neplýtvá tokeny.
+  const merged = mergeProjectRoadmaps(projectName);
+  if (merged.length === 0) return null;
 
-  for (const file of files) {
-    const filePath = path.join(projectDir, file);
-    let content;
-    try {
-      content = fs.readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-    const parsed = parseRoadmap(content);
+  for (const item of merged) {
+    if (item.done) continue;
 
-    // Projdi VŠECHNY phases a VŠECHNY items — přeskoč jen jednotlivé stuck/vyčerpané
-    for (const phase of parsed.phases) {
-      for (const item of phase.items) {
-        if (item.done) continue;
+    const key = taskKey(projectName, item.text);
+    if (executionState.stuckTasks.has(key)) continue;
 
-        const key = taskKey(projectName, item.text);
-        if (executionState.stuckTasks.has(key)) continue;
+    const attempts = executionState.taskAttempts.get(key) || 0;
+    if (attempts > LIMITS.MAX_RETRIES_PER_TASK) continue;
 
-        const attempts = executionState.taskAttempts.get(key) || 0;
-        if (attempts > LIMITS.MAX_RETRIES_PER_TASK) continue;
-
-        return {
-          project: projectName,
-          file,
-          phase: phase.title,
-          task: item.text,
-          agent: routeTaskToAgent(item.text),
-          attempts,
-        };
-      }
-    }
+    return {
+      project: projectName,
+      file: item.canonicalFile,
+      sources: item.sources,
+      phase: item.phase,
+      task: item.text,
+      agent: routeTaskToAgent(item.text),
+      attempts,
+    };
   }
   return null; // Vše hotové (nebo vše stuck/vyčerpané)
 }
@@ -277,6 +266,21 @@ function markTaskDone(projectName, file, taskText) {
 // AGENT EXECUTION — robustní spouštění přes openclaw CLI
 // Dříve: chybějící diagnostika ze stderr (viz Bug C)
 // ====================================================================
+// Odškrtne task ve VŠECH zdrojových souborech (dedup merge).
+// Vrací true pokud alespoň v jednom souboru odškrtl.
+function markTaskDoneMulti(projectName, sources, taskText) {
+  if (!sources || sources.length === 0) return markTaskDone(projectName, null, taskText);
+  let anyMarked = false;
+  let anyFound = false;
+  for (const file of sources) {
+    const marked = markTaskDone(projectName, file, taskText);
+    if (marked) anyMarked = true;
+    anyFound = anyFound || marked;
+  }
+  // Pokud žádný soubor nenašel shodu → false (stuck), jinak true
+  return anyFound;
+}
+
 function runTaskAgent(agentName, projectName, taskText, callback, model) {
   const execModel = model || config.EXEC_MODEL; // Phase 1: default = deepseek
   const task = AGENT_TASKS[agentName];
@@ -436,7 +440,7 @@ function executeOneTask(projectName, callback) {
       return callback(null, { success: false, task: next.task, agent: next.agent, error: err.message });
     }
 
-    const marked = markTaskDone(projectName, next.file, next.task);
+    const marked = markTaskDoneMulti(projectName, next.sources, next.task);
     if (marked) {
       // Úspěšně hotovo — vyčistí attempts, aby se task mohl znovu objevit pokud někdo rollbackne (viz Bug B)
       clearTaskAttempts(key);
@@ -511,44 +515,34 @@ function enqueueProjectTasks(projectName) {
     return 0;
   }
 
-  const projectDir = path.join(config.PROJECTS_DIR, projectName);
-  const files = findRoadmapFiles(projectDir);
-  if (files.length === 0) return 0;
+  // Dedup merge — jeden task i když je ve víc souborech. Neplýtvá tokeny.
+  const merged = mergeProjectRoadmaps(projectName);
+  if (merged.length === 0) return 0;
 
   let added = 0;
-  for (const file of files) {
-    let content;
-    try {
-      content = fs.readFileSync(path.join(projectDir, file), "utf8");
-    } catch {
-      continue;
-    }
-    const parsed = parseRoadmap(content);
-    for (const phase of parsed.phases) {
-      for (const item of phase.items) {
-        if (item.done) continue;
+  for (const item of merged) {
+    if (item.done) continue;
 
-        const key = taskKey(projectName, item.text);
-        if (executionState.stuckTasks.has(key)) continue;
+    const key = taskKey(projectName, item.text);
+    if (executionState.stuckTasks.has(key)) continue;
 
-        const attempts = executionState.taskAttempts.get(key) || 0;
-        if (attempts > LIMITS.MAX_RETRIES_PER_TASK) continue;
+    const attempts = executionState.taskAttempts.get(key) || 0;
+    if (attempts > LIMITS.MAX_RETRIES_PER_TASK) continue;
 
-        // O(1) detekce duplikátu přes Set (viz Bug D)
-        if (executionState.queueIndex.has(key)) continue;
+    // O(1) detekce duplikátu přes Set (viz Bug D)
+    if (executionState.queueIndex.has(key)) continue;
 
-        executionState.queue.push({
-          key,
-          project: projectName,
-          file,
-          phase: phase.title,
-          task: item.text,
-          agent: routeTaskToAgent(item.text),
-        });
-        executionState.queueIndex.add(key);
-        added++;
-      }
-    }
+    executionState.queue.push({
+      key,
+      project: projectName,
+      file: item.canonicalFile,
+      sources: item.sources,
+      phase: item.phase,
+      task: item.text,
+      agent: routeTaskToAgent(item.text),
+    });
+    executionState.queueIndex.add(key);
+    added++;
   }
   return added;
 }
@@ -655,7 +649,7 @@ function startQueueWorker() {
             at: new Date().toISOString(),
           });
         } else {
-          const marked = markTaskDone(item.project, item.file, item.task);
+          const marked = markTaskDoneMulti(item.project, item.sources, item.task);
           if (marked) {
             executionState.queueLog.unshift({
               task: item.task,
@@ -794,6 +788,7 @@ module.exports = {
   modelForAgent,
   findNextTask,
   markTaskDone,
+  markTaskDoneMulti,
   findTaskLine,
   normalizeTaskText,
   runTaskAgent,
