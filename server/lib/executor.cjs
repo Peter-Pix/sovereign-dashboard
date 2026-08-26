@@ -17,6 +17,12 @@ const { isSafeName } = require("./projects.cjs"); // použito pro validaci proje
 const LIMITS = {
   MAX_TASKS_PER_RUN: 5,        // max tasků v jednom run-all
   MAX_CONCURRENT: config.EXEC_CONCURRENCY || 3, // max souběžných exekucí (paralelní pool)
+  // --- Adaptivní řízení (inteligentní sloty) ---
+  // Max souběžných exekucí z JEDNOHO projektu (default 1). Tasky z jednoho
+  // projektu si konkurují na stejných souborech → paralelně nedávají smysl.
+  MAX_PER_PROJECT: Number(process.env.EXEC_MAX_PER_PROJECT) || 1,
+  // Max souběžných tasků ze STEJNÉ fáze (závislé tasky → sekvenčně).
+  MAX_PER_PHASE: Number(process.env.EXEC_MAX_PER_PHASE) || 1,
   MAX_RETRIES_PER_TASK: 1,     // max POKUSů CELKEM (1 = jen jeden pokus, 0 = žádný, 2 = dva pokusy)
   MAX_TOTAL_EXECUTIONS: 20,    // globální budget za session
   COOLDOWN_MS: 2000,           // min interval mezi exekucemi
@@ -36,6 +42,7 @@ const executionState = {
   queueIndex: new Set(), // O(1) detekce duplikátů místo .some() — viz Bug D
   current: null,
   active: [],       // pole běžících exekucí (paralelní pool) — viz Phase 1
+  pausedKeys: new Set(), // keyy tasků pozastavených uživatelem (per-process kill)
   queueLog: [],
   workerRunning: false,
   paused: false,
@@ -275,6 +282,21 @@ function runTaskAgent(agentName, projectName, taskText, callback, model) {
   const task = AGENT_TASKS[agentName];
   if (!task) return callback(new Error(`Neznámý agent: ${agentName}`));
 
+  // TEST SEAM (E2E): deterministický mock — místo reálného openclaw agenta
+  // okamžitě "dokončí" task. Pouze pro testy paralelního poolu, kde
+  // nechceme volat cloud model (5 min / reálné tokeny).
+  // Aktivuje se: EXECUTOR_MOCK_AGENT=1  (+ volitelně EXECUTOR_MOCK_DELAY_MS pro
+  // načasování tak, aby se nejdřív zaplnily všechny sloty).
+  if (process.env.EXECUTOR_MOCK_AGENT === "1") {
+    const delay = Number(process.env.EXECUTOR_MOCK_DELAY_MS) || 0;
+    const modelUsed = execModel;
+    setTimeout(() => {
+      // Simulace: agent task "dokončil" (markTaskDone pak odškrtne ROADMAP).
+      callback(null, { text: `[mock] ${agentName} dokončil: ${taskText} (${modelUsed})`, agent: task.name });
+    }, delay);
+    return;
+  }
+
   const projectDir = path.join(config.PROJECTS_DIR, projectName);
 
   let contextSection = "";
@@ -505,6 +527,7 @@ function resetExecutionState() {
   executionState.queueIndex.clear();
   executionState.current = null;
   executionState.active = [];
+  executionState.pausedKeys.clear();
   executionState.queueLog = [];
   executionState.workerRunning = false;
   executionState.paused = false;
@@ -591,6 +614,27 @@ function enqueueProjectTasks(projectName) {
   return added;
 }
 
+// ===== Adaptivní scheduler =====
+// Rozhodne, jestli task MŮŽE běžet TEĎ, nebo má počkat (kvůli závislostem).
+// Princip: tasky z jednoho projektu si konkurují na souborech → paralelně
+// nedávají smysl (MAX_PER_PROJECT). Tasky ze stejné fáze jsou závislé →
+// sekvenčně (MAX_PER_PHASE). Pozastavené tasky se nespouští.
+function canRunNow(item, active) {
+  if (executionState.pausedKeys.has(item.key)) return false;
+
+  // Projekt limit — kolik tasků z toho projektu už běží
+  const sameProject = active.filter((a) => a.project === item.project).length;
+  if (sameProject >= LIMITS.MAX_PER_PROJECT) return false;
+
+  // Fáze limit — kolik tasků ze stejné fáze už běží
+  if (item.phase) {
+    const samePhase = active.filter((a) => a.project === item.project && a.phase === item.phase).length;
+    if (samePhase >= LIMITS.MAX_PER_PHASE) return false;
+  }
+
+  return true;
+}
+
 function startQueueWorker() {
   // Phase 1: paralelní pool — až MAX_CONCURRENT souběžných exekucí.
   // queue je sdílená, tasky se berou FIFO, ale běží paralelně (až 3 najednou).
@@ -604,7 +648,10 @@ function startQueueWorker() {
       return;
     }
 
-    // Spouští, dokud je volný slot A fronta má tasky
+    // Spouští, dokud je volný slot A fronta má tasky.
+    // Adaptivní: vybere task, který MŮŽE běžet (nekonkuruje na projekt/fázi,
+    // není pozastavený). Závislé tasky zůstanou ve frontě — nespustí se
+    // paralelně s předchůdcem, ale neblokují slot.
     while (executionState.active.length < LIMITS.MAX_CONCURRENT && executionState.queue.length > 0) {
       const check = canExecute();
       if (!check.ok) {
@@ -612,11 +659,27 @@ function startQueueWorker() {
         return;
       }
 
-      const item = executionState.queue.shift();
+      // Najdi první task, který může běžet teď (adaptivní výběr)
+      let item = null;
+      let idx = -1;
+      for (let i = 0; i < executionState.queue.length; i++) {
+        if (canRunNow(executionState.queue[i], executionState.active)) {
+          item = executionState.queue[i];
+          idx = i;
+          break;
+        }
+      }
+      // Žádný task nemůže běžet (všechny blokované závislostmi) → počkej na dokončení
+      if (!item) {
+        setTimeout(pump, LIMITS.COOLDOWN_MS);
+        return;
+      }
+      executionState.queue.splice(idx, 1);
       executionState.queueIndex.delete(item.key);
 
       const model = modelForAgent(item.agent);
       const activeEntry = {
+        key: item.key,
         project: item.project,
         agent: item.agent,
         task: item.task,
@@ -706,7 +769,74 @@ function getQueueState() {
     log: executionState.queueLog,
     workerRunning: executionState.workerRunning,
     paused: executionState.paused,
+    pausedProcesses: getPausedProcesses(),
   };
+}
+
+// ===== Per-process pause/resume (adaptivní řízení) =====
+// Pozastaví JEDEN task/agenta (ne celou frontu). Task je "odpojen":
+// - pokud běží → slot se uvolní (child agent doběhne na pozadí, výsledek se zahodí)
+// - už nebude znovu spuštěn (key zůstává v pausedKeys)
+// - task se NEodškrtne (práce není považována za hotovou)
+function pauseProcess(key) {
+  if (!key) return { success: false, error: "Chybí key" };
+
+  executionState.pausedKeys.add(key);
+
+  // Pokud běží, uvolni slot (odeber z active poolu)
+  const idx = executionState.active.findIndex((a) => a.key === key);
+  if (idx !== -1) {
+    executionState.active.splice(idx, 1);
+    executionState.current = executionState.active[0] || null;
+  }
+
+  // Odeber z fronty (pokud čekal)
+  const qIdx = executionState.queue.findIndex((q) => q.key === key);
+  if (qIdx !== -1) {
+    executionState.queue.splice(qIdx, 1);
+    executionState.queueIndex.delete(key);
+  }
+
+  executionState.queueLog.unshift({
+    task: key.split("::").pop(),
+    agent: "user",
+    status: "paused",
+    at: new Date().toISOString(),
+  });
+
+  return { success: true, pausedKeys: executionState.pausedKeys.size };
+}
+
+// Zruší pozastavení → task se může znovu spustit (pokud znovu enqueue)
+function resumeProcess(key) {
+  if (!key) return null;
+  executionState.pausedKeys.delete(key);
+  return { success: true, pausedKeys: executionState.pausedKeys.size };
+}
+
+// Pozastaví všechny procesy jednoho projektu (zkratka)
+function pauseProject(projectName) {
+  const keys = [];
+  for (const a of executionState.active) {
+    if (a.project === projectName) {
+      keys.push(a.key);
+      pauseProcess(a.key);
+    }
+  }
+  for (const q of executionState.queue) {
+    if (q.project === projectName && !executionState.pausedKeys.has(q.key)) {
+      keys.push(q.key);
+      pauseProcess(q.key);
+    }
+  }
+  return { success: true, paused: keys.length, project: projectName };
+}
+
+function getPausedProcesses() {
+  return Array.from(executionState.pausedKeys).map((k) => {
+    const [project, ...rest] = k.split("::");
+    return { key: k, project, task: rest.join("::") };
+  });
 }
 
 function pauseQueue() {
@@ -735,6 +865,11 @@ module.exports = {
   getQueueState,
   pauseQueue,
   resumeQueue,
+  pauseProcess,
+  resumeProcess,
+  pauseProject,
+  getPausedProcesses,
+  canRunNow,
   resetExecutionState,
   getExecutionState,
   LIMITS,

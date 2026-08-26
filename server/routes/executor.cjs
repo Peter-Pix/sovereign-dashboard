@@ -9,6 +9,7 @@ module.exports = function registerExecutor(app, deps) {
     enqueueProjectTasks, startQueueWorker,
     getQueueState, pauseQueue, resumeQueue,
     getExecutionState, resetExecutionState,
+    pauseProcess, resumeProcess, pauseProject,
   } = deps;
 
   // Promise-based mutex
@@ -78,6 +79,35 @@ module.exports = function registerExecutor(app, deps) {
 
   app.post("/api/executor/queue/resume", requireAuth, asyncHandler(async (req, res) => {
     res.json(resumeQueue());
+  }));
+
+  // Per-process pause/resume — pozastaví JEDEN task/agenta
+  app.post("/api/executor/process/pause",
+    requireAuth,
+    rateLimitMiddleware.rateLimitByRoute("/api/executor/process/pause"),
+    asyncHandler(async (req, res) => {
+    const { key } = req.body || {};
+    if (!key) throw new HttpError(400, "Chybí key procesu");
+    res.json(pauseProcess(String(key)));
+  }));
+
+  app.post("/api/executor/process/resume",
+    requireAuth,
+    rateLimitMiddleware.rateLimitByRoute("/api/executor/process/resume"),
+    asyncHandler(async (req, res) => {
+    const { key } = req.body || {};
+    if (!key) throw new HttpError(400, "Chybí key procesu");
+    res.json(resumeProcess(String(key)));
+  }));
+
+  // Pozastav všechny procesy projektu
+  app.post("/api/executor/project/pause",
+    requireAuth,
+    rateLimitMiddleware.rateLimitByRoute("/api/executor/project/pause"),
+    asyncHandler(async (req, res) => {
+    const { project } = req.body || {};
+    if (!isSafeName(project)) throw new HttpError(400, "Invalid project name");
+    res.json(pauseProject(project));
   }));
 
   app.post("/api/executor/queue/:project",

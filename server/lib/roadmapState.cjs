@@ -83,6 +83,7 @@ function buildRoadmapState(executorState) {
       length: executorState.queueLength || 0,
       workerRunning: executorState.workerRunning || false,
       paused: executorState.paused || false,
+      pausedProcesses: executorState.pausedProcesses || [],
     },
     updatedAt: new Date().toISOString(),
   };
