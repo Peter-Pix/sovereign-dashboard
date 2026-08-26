@@ -5,7 +5,7 @@ const ROOT = path.resolve(__dirname, "..");
 const SOVEREIGN_DIR = path.resolve(ROOT, "../..", ".openclaw/workspace/sovereign-os");
 
 // Výchozí modely (mohou být přepsány runtime přes modelStore)
-const DEFAULT_EXEC_MODEL = process.env.SOVEREIGN_EXEC_MODEL || "ollama/minimax-m3:cloud";
+const DEFAULT_EXEC_MODEL = process.env.SOVEREIGN_EXEC_MODEL || "ollama/deepseek-v4-flash:cloud"; // Phase 1: vše na deepseek
 const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_MODEL || "minimax-m3:cloud";
 
 module.exports = {
@@ -31,6 +31,8 @@ module.exports = {
   MAX_NAME_LEN: 128,
 
   EXEC_AGENT: process.env.SOVEREIGN_EXEC_AGENT || "main",
+  // Max souběžných exekucí v queue workeru (paralelní pool)
+  EXEC_CONCURRENCY: Number(process.env.EXEC_CONCURRENCY) || 3,
 
   // Výchozí hodnoty — runtime přepisuje přes modelStore
   DEFAULT_EXEC_MODEL,

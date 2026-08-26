@@ -16,6 +16,7 @@ const { isSafeName } = require("./projects.cjs"); // použito pro validaci proje
 // ===== LIMITY (ochrana proti loopu a plýtvání tokeny) =====
 const LIMITS = {
   MAX_TASKS_PER_RUN: 5,        // max tasků v jednom run-all
+  MAX_CONCURRENT: config.EXEC_CONCURRENCY || 3, // max souběžných exekucí (paralelní pool)
   MAX_RETRIES_PER_TASK: 1,     // max POKUSů CELKEM (1 = jen jeden pokus, 0 = žádný, 2 = dva pokusy)
   MAX_TOTAL_EXECUTIONS: 20,    // globální budget za session
   COOLDOWN_MS: 2000,           // min interval mezi exekucemi
@@ -34,6 +35,7 @@ const executionState = {
   queue: [],
   queueIndex: new Set(), // O(1) detekce duplikátů místo .some() — viz Bug D
   current: null,
+  active: [],       // pole běžících exekucí (paralelní pool) — viz Phase 1
   queueLog: [],
   workerRunning: false,
   paused: false,
@@ -101,6 +103,12 @@ function normalizeForRouting(text) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+// Model pro daného agenta. Phase 1: VŠE na jednom modelu (EXEC_MODEL).
+// Kdyby se v budoucnu kombinovaly modely, stačí tady přidat mapu per agent.
+function modelForAgent(agentName) {
+  return config.EXEC_MODEL; // deepseek default
 }
 
 function routeTaskToAgent(taskText) {
@@ -255,7 +263,8 @@ function markTaskDone(projectName, file, taskText) {
 // AGENT EXECUTION — robustní spouštění přes openclaw CLI
 // Dříve: chybějící diagnostika ze stderr (viz Bug C)
 // ====================================================================
-function runTaskAgent(agentName, projectName, taskText, callback) {
+function runTaskAgent(agentName, projectName, taskText, callback, model) {
+  const execModel = model || config.EXEC_MODEL; // Phase 1: default = deepseek
   const task = AGENT_TASKS[agentName];
   if (!task) return callback(new Error(`Neznámý agent: ${agentName}`));
 
@@ -284,7 +293,7 @@ function runTaskAgent(agentName, projectName, taskText, callback) {
 Buď konkrétní a věcný. Pracuj jen na tomto úkolu, ne na jiných.`;
 
       const runAgentWithPrompt = (prompt, cb) => {
-        const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", prompt];
+        const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", execModel, "-m", prompt];
         let finished = false;
         const timeout = setTimeout(() => {
           if (finished) return;
@@ -338,7 +347,7 @@ Buď konkrétní a věcný. Pracuj jen na tomto úkolu, ne na jiných.`;
       // MCP načtení selhalo — spustíme bez MCP sekce (graceful degradation)
       const basePrompt = `Jsi task.name — Sovereign OS. Pracuješ na projektu "${projectName}" v ${projectDir}.\n\nÚKOL Z ROADMAPY: ${taskText}${contextSection}`;
       const runAgentWithPrompt = (prompt, cb) => {
-        const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", prompt];
+        const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", execModel, "-m", prompt];
         execFile("openclaw", args, { timeout: LIMITS.AGENT_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024, killSignal: "SIGKILL", env: { ...process.env, FORCE_COLOR: "0" } }, (err, stdout, stderr) => {
           if (err) return cb(new Error(`Exekuce selhala: ${err.message}`));
           try {
@@ -488,17 +497,29 @@ function resetExecutionState() {
   executionState.queue = [];
   executionState.queueIndex.clear();
   executionState.current = null;
+  executionState.active = [];
   executionState.queueLog = [];
   executionState.workerRunning = false;
   executionState.paused = false;
 }
 
 function getExecutionState() {
+  const perProject = {};
+  for (const a of executionState.active) {
+    perProject[a.project] = (perProject[a.project] || 0) + 1;
+  }
   return {
     totalExecutions: executionState.totalExecutions,
     maxTotal: LIMITS.MAX_TOTAL_EXECUTIONS,
     stuckTasks: executionState.stuckTasks.size,
     activeAttempts: executionState.taskAttempts.size,
+    slots: {
+      total: LIMITS.MAX_CONCURRENT,
+      used: executionState.active.length,
+    },
+    active: executionState.active,          // pole běžících exekucí
+    perProject,                            // { projectName: pocetBezicich }
+    runningAgents: executionState.active.length,
   };
 }
 
@@ -555,85 +576,117 @@ function enqueueProjectTasks(projectName) {
 }
 
 function startQueueWorker() {
-  if (executionState.workerRunning) return;
-  executionState.workerRunning = true;
+  // Phase 1: paralelní pool — až MAX_CONCURRENT souběžných exekucí.
+  // queue je sdílená, tasky se berou FIFO, ale běží paralelně (až 3 najednou).
+  if (executionState.paused) return;
 
-  const processNext = () => {
+  const pump = () => {
+    // Zastav, když je pause nebo není co dělat
     if (executionState.paused) {
       executionState.workerRunning = false;
+      executionState.current = null;
       return;
     }
-    if (executionState.queue.length === 0) {
+
+    // Spouští, dokud je volný slot A fronta má tasky
+    while (executionState.active.length < LIMITS.MAX_CONCURRENT && executionState.queue.length > 0) {
+      const check = canExecute();
+      if (!check.ok) {
+        setTimeout(pump, LIMITS.COOLDOWN_MS);
+        return;
+      }
+
+      const item = executionState.queue.shift();
+      executionState.queueIndex.delete(item.key);
+
+      const model = modelForAgent(item.agent);
+      const activeEntry = {
+        project: item.project,
+        agent: item.agent,
+        task: item.task,
+        model,
+        startedAt: new Date().toISOString(),
+        file: item.file,
+        phase: item.phase,
+      };
+      executionState.active.push(activeEntry);
+      executionState.current = activeEntry; // pro UI zpětnou kompatibilitu (první aktivní)
+      executionState.totalExecutions++;
+      executionState.lastExecutionAt = Date.now();
+      boundedAdd(executionState.taskAttempts, item.key, (executionState.taskAttempts.get(item.key) || 0) + 1);
+
+      console.log(`[Executor] (queue) Spouštím ${item.agent} (${model}) na: "${item.task}" [${executionState.active.length}/${LIMITS.MAX_CONCURRENT} slotů]`);
+
+      runTaskAgent(item.agent, item.project, item.task, (err, result) => {
+        // Odeber z active poolu
+        const idx = executionState.active.indexOf(activeEntry);
+        if (idx !== -1) executionState.active.splice(idx, 1);
+        executionState.current = executionState.active[0] || null;
+
+        if (err) {
+          const category = err.message?.includes("timeout") || err.message?.includes("Timeout")
+            ? "timeout"
+            : (err.message?.includes("OLLAMA") || err.message?.includes("Bad Gateway") ? "upstream" : "internal");
+          executionState.queueLog.unshift({
+            task: item.task,
+            agent: item.agent,
+            status: "failed",
+            error: err.message,
+            category,
+            retryable: category !== "internal",
+            at: new Date().toISOString(),
+          });
+        } else {
+          const marked = markTaskDone(item.project, item.file, item.task);
+          if (marked) {
+            executionState.queueLog.unshift({
+              task: item.task,
+              agent: item.agent,
+              status: "done",
+              at: new Date().toISOString(),
+            });
+            clearTaskAttempts(item.key); // viz Bug B
+          } else {
+            boundedAdd(executionState.stuckTasks, item.key, true);
+            executionState.queueLog.unshift({
+              task: item.task,
+              agent: item.agent,
+              status: "stuck",
+              at: new Date().toISOString(),
+            });
+          }
+        }
+        if (executionState.queueLog.length > LIMITS.MAX_LOG_ENTRIES) {
+          executionState.queueLog.length = LIMITS.MAX_LOG_ENTRIES;
+        }
+
+        // Když se uvolní slot, spustí další (po krátkém cooldownu)
+        setTimeout(pump, LIMITS.COOLDOWN_MS);
+      });
+    }
+
+    // Po skončení smyčky: pokud není nic aktivní ani ve frontě, worker je idle
+    if (executionState.active.length === 0 && executionState.queue.length === 0) {
       executionState.workerRunning = false;
       executionState.current = null;
-      return;
+    } else {
+      executionState.workerRunning = true;
     }
-
-    const check = canExecute();
-    if (!check.ok) {
-      setTimeout(processNext, LIMITS.COOLDOWN_MS);
-      return;
-    }
-
-    const item = executionState.queue.shift();
-    executionState.queueIndex.delete(item.key);
-    executionState.current = item;
-    executionState.totalExecutions++;
-    executionState.lastExecutionAt = Date.now();
-    boundedAdd(executionState.taskAttempts, item.key, (executionState.taskAttempts.get(item.key) || 0) + 1);
-
-    console.log(`[Executor] (queue) Spouštím ${item.agent} na: "${item.task}"`);
-
-    runTaskAgent(item.agent, item.project, item.task, (err, result) => {
-      if (err) {
-        const category = err.message?.includes("timeout") || err.message?.includes("Timeout")
-          ? "timeout"
-          : (err.message?.includes("OLLAMA") || err.message?.includes("Bad Gateway") ? "upstream" : "internal");
-        executionState.queueLog.unshift({
-          task: item.task,
-          agent: item.agent,
-          status: "failed",
-          error: err.message,
-          category,
-          retryable: category !== "internal",
-          at: new Date().toISOString(),
-        });
-      } else {
-        const marked = markTaskDone(item.project, item.file, item.task);
-        if (marked) {
-          executionState.queueLog.unshift({
-            task: item.task,
-            agent: item.agent,
-            status: "done",
-            at: new Date().toISOString(),
-          });
-          clearTaskAttempts(item.key); // viz Bug B
-        } else {
-          boundedAdd(executionState.stuckTasks, item.key, true);
-          executionState.queueLog.unshift({
-            task: item.task,
-            agent: item.agent,
-            status: "stuck",
-            at: new Date().toISOString(),
-          });
-        }
-      }
-      if (executionState.queueLog.length > LIMITS.MAX_LOG_ENTRIES) {
-        executionState.queueLog.length = LIMITS.MAX_LOG_ENTRIES;
-      }
-
-      executionState.current = null;
-      setTimeout(processNext, LIMITS.COOLDOWN_MS);
-    });
   };
 
-  processNext();
+  executionState.workerRunning = true;
+  pump();
 }
 
 function getQueueState() {
   return {
     queueLength: executionState.queue.length,
     current: executionState.current,
+    active: executionState.active,
+    slots: {
+      total: LIMITS.MAX_CONCURRENT,
+      used: executionState.active.length,
+    },
     log: executionState.queueLog,
     workerRunning: executionState.workerRunning,
     paused: executionState.paused,
@@ -653,6 +706,7 @@ function resumeQueue() {
 
 module.exports = {
   routeTaskToAgent,
+  modelForAgent,
   findNextTask,
   markTaskDone,
   findTaskLine,

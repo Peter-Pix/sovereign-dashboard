@@ -161,3 +161,38 @@ test("LIMITS: konzistentní logika MAX_RETRIES_PER_TASK (Bug J)", () => {
   // Doporučení: v dokumentaci
   assert.ok(LIMITS.MAX_RETRIES_PER_TASK >= 0);
 });
+
+// ===== Phase 1: paralelní pool + model mapping =====
+const {
+  modelForAgent,
+  getExecutionState,
+  getQueueState,
+} = require("../server/lib/executor.cjs");
+
+test("Phase1: modelForAgent vrací EXEC_MODEL (vše na jednom modelu)", () => {
+  const m = modelForAgent("archivist");
+  assert.strictEqual(typeof m, "string");
+  assert.ok(m.length > 0, "model name nesmí být prázdný");
+});
+
+test("Phase1: LIMITS.MAX_CONCURRENT je konfigurovatelné číslo", () => {
+  assert.strictEqual(typeof LIMITS.MAX_CONCURRENT, "number");
+  assert.ok(LIMITS.MAX_CONCURRENT >= 1);
+});
+
+test("Phase1: getExecutionState má slots + active + perProject", () => {
+  const s = getExecutionState();
+  assert.ok(s.slots, "slots chybí");
+  assert.strictEqual(s.slots.total, LIMITS.MAX_CONCURRENT);
+  assert.ok(Array.isArray(s.active), "active musí být pole");
+  assert.ok(s.perProject && typeof s.perProject === "object", "perProject chybí");
+  assert.strictEqual(typeof s.runningAgents, "number");
+});
+
+test("Phase1: getQueueState má slots + active", () => {
+  const s = getQueueState();
+  assert.ok(s.slots, "slots chybí");
+  assert.strictEqual(s.slots.total, LIMITS.MAX_CONCURRENT);
+  assert.ok(Array.isArray(s.active), "active musí být pole");
+  assert.strictEqual(s.slots.used, s.active.length);
+});
