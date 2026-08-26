@@ -4,21 +4,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { API } from "../config";
 import Spinner from "./Spinner";
+import { formatElapsed } from "../lib/format";
 
 // ----- Barvy dle progress (sdílené) -----
 const progColor = (pct) => (pct >= 70 ? "#3ecf8e" : pct >= 30 ? "#e5b34b" : "#e85d5d");
 
-// Formátuje elapsed ms → "Xs", "Xm Ys", "Xh Ym" (živý čas běhu exekuce)
-function fmtElapsed(ms) {
-  if (ms == null || ms < 0) return "—";
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const rs = s % 60;
-  if (m < 60) return `${m}m ${rs}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
 
 function ProgressBar({ pct }) {
   return (
@@ -129,7 +119,7 @@ function RoadmapDetail({ project, data, state, onBack }) {
                 <div className="flex items-start gap-2">
                   <span className="text-[#C89B3C] shrink-0">▶</span>
                   <span className="text-[#e8e8e8]">"{a.task}"</span>
-                  <span className="text-[#C89B3C] font-mono shrink-0 ml-auto whitespace-nowrap">⏱ {fmtElapsed(a.elapsedMs)}</span>
+                  <span className="text-[#C89B3C] font-mono shrink-0 ml-auto whitespace-nowrap">⏱ {formatElapsed(a.elapsedMs)}</span>
                   <button
                     onClick={() => pauseProcess(a.key)}
                     title="Pozastavit tento proces"

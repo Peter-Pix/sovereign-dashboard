@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { API, AUTH_TOKEN, authHeaders } from "../config";
+import { API, authHeaders } from "../config";
 
 // Seznam dostupných modelů (pro dropdown)
 const AVAILABLE_MODELS = [
