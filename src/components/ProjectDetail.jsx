@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { API, authHeaders, cachedFetch, invalidateCache } from "../config";
-import { formatElapsed } from "../lib/format";
+import ExecutionPanel from "./ExecutionPanel";
 
 export default function ProjectDetail({ projectName, onBack }) {
   const [project, setProject] = useState(null);
@@ -12,8 +12,6 @@ export default function ProjectDetail({ projectName, onBack }) {
   const [bugSaving, setBugSaving] = useState(false);
   const [bugError, setBugError] = useState(null);
   const [execState, setExecState] = useState({ perProject: {}, slots: { total: 3, used: 0 }, active: [] });
-  const [executing, setExecuting] = useState(false);
-  const [execResult, setExecResult] = useState(null);
 
   // Poll stav exekuce pro tento projekt
   useEffect(() => {
@@ -59,7 +57,6 @@ export default function ProjectDetail({ projectName, onBack }) {
         setBugDesc("");
         setBugSeverity("medium");
         setShowBugForm(false);
-        // reload (invalidate cache, pak fresh fetch)
         invalidateCache(`${API}/api/projects/${encodeURIComponent(projectName)}`);
         return cachedFetch(`${API}/api/projects/${encodeURIComponent(projectName)}`, { force: true })
           .then(setProject);
@@ -72,45 +69,13 @@ export default function ProjectDetail({ projectName, onBack }) {
     navigator.clipboard.writeText(text);
   };
 
-  // Spustí roadmap queue pro tento projekt
-  const runQueue = async () => {
-    setExecuting(true);
-    setExecResult(null);
-    try {
-      const res = await fetch(`${API}/api/executor/queue/${encodeURIComponent(projectName)}`, {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-      });
-      const d = await res.json();
-      setExecResult(d);
-    } catch {
-      setExecResult({ error: "Síťová chyba" });
-    } finally {
-      setExecuting(false);
-    }
-  };
-
   const runningHere = execState.perProject?.[projectName] || 0;
-  const pausedHere = (execState.pausedProcesses || []).filter((p) => p.project === projectName);
-
-  const pauseProcess = async (key) => {
-    await fetch(`${API}/api/executor/process/pause`, {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ key }),
-    });
-  };
-  const slotsUsed = execState.slots?.used || 0;
-  const slotsTotal = execState.slots?.total || 3;
-  const allSlotsFull = slotsUsed >= slotsTotal;
-  const activeHere = (execState.active || []).filter((a) => a.project === projectName);
 
   if (loading) return <p className="text-[#5c5c5c]">Načítám detail...</p>;
   if (!project) return <p className="text-[#e85d5d]">Projekt nenalezen</p>;
 
   return (
     <div>
-      {/* Back button */}
       <button
         onClick={onBack}
         className="text-xs text-[#C89B3C] hover:text-[#8f6f26] mb-4"
@@ -134,81 +99,8 @@ export default function ProjectDetail({ projectName, onBack }) {
         <p className="text-xs text-[#5c5c5c] mt-1">Hash: {project.lastHash}</p>
       </div>
 
-      {/* Aktivní exekuce roadmap */}
-      <div className="bg-[#111] border border-[#232323] rounded-xl p-6 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-[#C89B3C] uppercase tracking-wider">
-            🤖 Aktivní exekuce
-          </h3>
-          <span className="text-[10px] font-mono text-[#5c5c5c]">
-            sloty {slotsUsed}/{slotsTotal}
-            {allSlotsFull && <span className="text-[#e85d5d]"> · plné</span>}
-          </span>
-        </div>
-
-        {activeHere.length > 0 ? (
-          <div className="space-y-1.5 mb-3">
-            {activeHere.map((a, i) => (
-              <div key={i} className="flex flex-col gap-0.5 text-xs border-b border-[#232323] last:border-b-0 pb-1.5 last:pb-0">
-                <div className="flex items-start gap-2">
-                  <span className="text-[#C89B3C] shrink-0">▶</span>
-                  <span className="text-[#e8e8e8]">"{a.task}"</span>
-                  <span className="text-[#C89B3C] font-mono shrink-0 ml-auto whitespace-nowrap">⏱ {formatElapsed(a.elapsedMs)}</span>
-                  <button
-                    onClick={() => pauseProcess(a.key)}
-                    title="Pozastavit tento proces"
-                    className="text-[10px] px-1.5 py-0.5 rounded border border-[#232323] text-[#9d9d9d] hover:text-[#e85d5d] hover:border-[#e85d5d] transition-colors shrink-0"
-                  >
-                    ⏸
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 pl-5 text-[10px] text-[#5c5c5c]">
-                  <span className="font-mono">{a.agent}</span>
-                  {a.role && <span>· {a.role}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-[#5c5c5c] mb-3">
-            {runningHere > 0
-              ? `${runningHere} agent${runningHere > 1 ? "i" : ""} běží na jiném projektu`
-              : "Žádné aktivní exekuce na tomto projektu."}
-          </p>
-        )}
-
-        {pausedHere.length > 0 && (
-          <div className="mb-3 p-3 bg-[#111] border border-[#e85d5d]/30 rounded-lg space-y-1">
-            <p className="text-[10px] text-[#e85d5d] uppercase tracking-wider">⏸ Pozastavené procesy</p>
-            {pausedHere.map((pp, i) => (
-              <div key={i} className="flex items-center gap-2 text-[10px]">
-                <span className="text-[#e85d5d]">⏸</span>
-                <span className="text-[#9d9d9d]">{pp.task}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Tlačítko spustit roadmap — disabled, když jsou všechny sloty plné */}
-        <button
-          onClick={runQueue}
-          disabled={executing || allSlotsFull}
-          className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {executing
-            ? "Zařazuji..."
-            : allSlotsFull
-              ? `Všechny sloty plné (${slotsUsed}/${slotsTotal})`
-              : "▶ Spustit roadmap"}
-        </button>
-        {execResult && (
-          <div className={`mt-3 p-3 rounded-md text-[11px] ${execResult.success ? "bg-[rgba(62,207,142,0.1)] text-[#3ecf8e]" : "bg-[rgba(232,93,93,0.1)] text-[#e85d5d]"}`}>
-            {execResult.success
-              ? `✅ ${execResult.queued} tasků zařazeno do fronty`
-              : `❌ ${execResult.error || execResult.message || "Chyba"}`}
-          </div>
-        )}
-      </div>
+      {/* Aktivní exekuce — sdílená komponenta */}
+      <ExecutionPanel project={projectName} state={execState} runLabel="▶ Spustit roadmap" />
 
       {/* Bug tickets */}
       <div className="bg-[#111] border border-[#232323] rounded-xl p-6 mb-4">
@@ -227,9 +119,7 @@ export default function ProjectDetail({ projectName, onBack }) {
         {showBugForm && (
           <form onSubmit={submitBug} className="bg-[#161616] border border-[#232323] rounded-lg p-4 mb-3 space-y-3">
             <div>
-              <label className="block text-[10px] text-[#5c5c5c] uppercase tracking-wider mb-1">
-                Titulek *
-              </label>
+              <label className="block text-[10px] text-[#5c5c5c] uppercase tracking-wider mb-1">Titulek *</label>
               <input
                 value={bugTitle}
                 onChange={(e) => setBugTitle(e.target.value)}
@@ -238,9 +128,7 @@ export default function ProjectDetail({ projectName, onBack }) {
               />
             </div>
             <div>
-              <label className="block text-[10px] text-[#5c5c5c] uppercase tracking-wider mb-1">
-                Popis
-              </label>
+              <label className="block text-[10px] text-[#5c5c5c] uppercase tracking-wider mb-1">Popis</label>
               <textarea
                 value={bugDesc}
                 onChange={(e) => setBugDesc(e.target.value)}
@@ -251,9 +139,7 @@ export default function ProjectDetail({ projectName, onBack }) {
             </div>
             <div className="flex items-center gap-3">
               <div>
-                <label className="block text-[10px] text-[#5c5c5c] uppercase tracking-wider mb-1">
-                  Severita
-                </label>
+                <label className="block text-[10px] text-[#5c5c5c] uppercase tracking-wider mb-1">Severita</label>
                 <select
                   value={bugSeverity}
                   onChange={(e) => setBugSeverity(e.target.value)}
@@ -279,10 +165,7 @@ export default function ProjectDetail({ projectName, onBack }) {
         {project.bugs && project.bugs.length > 0 ? (
           <div className="space-y-2">
             {project.bugs.map((bug) => (
-              <div
-                key={bug.id}
-                className="bg-[#161616] border border-[#232323] rounded-lg p-3"
-              >
+              <div key={bug.id} className="bg-[#161616] border border-[#232323] rounded-lg p-3">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm font-medium">{bug.title}</span>
                   <span
@@ -320,31 +203,15 @@ export default function ProjectDetail({ projectName, onBack }) {
 
       {/* Git log */}
       <div className="bg-[#111] border border-[#232323] rounded-xl p-6">
-        <h3 className="text-sm font-semibold text-[#C89B3C] uppercase tracking-wider mb-3">
-          Poslední commity
-        </h3>
+        <h3 className="text-sm font-semibold text-[#C89B3C] uppercase tracking-wider mb-3">Poslední commity</h3>
         <div className="space-y-1">
           {project.log && project.log.length > 0 ? (
             project.log.map((line, i) => (
-              <p key={i} className="text-xs text-[#5c5c5c] font-mono">
-                {line}
-              </p>
+              <p key={i} className="text-xs text-[#5c5c5c] font-mono">{line}</p>
             ))
-          ) : null}
-
-        {pausedHere.length > 0 && (
-          <div className="mb-3 p-3 bg-[#111] border border-[#e85d5d]/30 rounded-lg space-y-1">
-            <p className="text-[10px] text-[#e85d5d] uppercase tracking-wider">⏸ Pozastavené</p>
-            {pausedHere.map((pp, i) => (
-              <div key={i} className="flex items-center gap-2 text-[10px]">
-                <span className="text-[#e85d5d]">⏸</span>
-                <span className="text-[#9d9d9d]">{pp.task}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
+          ) : (
             <p className="text-xs text-[#5c5c5c]">Žádné commity</p>
+          )}
         </div>
       </div>
     </div>

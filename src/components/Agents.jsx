@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { API, authHeaders, cachedFetch, invalidateCache } from "../config";
+import { API, cachedFetch, invalidateCache } from "../config";
 import AgentStream from "./AgentStream";
 import WebhookSettings from "./WebhookSettings";
 import McpManager from "./McpManager";
