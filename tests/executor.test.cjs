@@ -198,3 +198,37 @@ test("Phase1: getQueueState má slots + active", () => {
   assert.ok(Array.isArray(s.active), "active musí být pole");
   assert.strictEqual(s.slots.used, s.active.length);
 });
+
+// ===== Adaptivní scheduler (canRunNow) =====
+const { canRunNow } = require("../server/lib/executor.cjs");
+
+test("canRunNow: povolí task, když nekonkuruje na projekt", () => {
+  const item = { key: "p1::t1", project: "p1", phase: "F1", agent: "archivist" };
+  const active = []; // nic neběží
+  assert.strictEqual(canRunNow(item, active), true);
+});
+
+test("canRunNow: blokuje 2. task z téhož projektu (MAX_PER_PROJECT=1)", () => {
+  const item = { key: "p1::t2", project: "p1", phase: "F1", agent: "archivist" };
+  const active = [{ key: "p1::t1", project: "p1", phase: "F1" }];
+  assert.strictEqual(canRunNow(item, active), false, "2. task z p1 nesmí běžet paralelně");
+});
+
+test("canRunNow: povolí task z jiného projektu", () => {
+  const item = { key: "p2::t1", project: "p2", phase: "F1", agent: "archivist" };
+  const active = [{ key: "p1::t1", project: "p1", phase: "F1" }];
+  assert.strictEqual(canRunNow(item, active), true, "task z jiného projektu může běžet");
+});
+
+test("canRunNow: blokuje task ze stejné fáze (MAX_PHASE=1)", () => {
+  const item = { key: "p1::t2", project: "p1", phase: "F1", agent: "archivist" };
+  const active = [{ key: "p1::t1", project: "p1", phase: "F1" }];
+  assert.strictEqual(canRunNow(item, active), false);
+});
+
+test("canRunNow: povolí task z jiné fáze (pokud projekt limit to dovolí)", () => {
+  // Projekt limit je 1, takže i jiná fáze z p1 je blokovaná
+  const item = { key: "p1::t2", project: "p1", phase: "F2", agent: "archivist" };
+  const active = [{ key: "p1::t1", project: "p1", phase: "F1" }];
+  assert.strictEqual(canRunNow(item, active), false, "projekt limit 1 stále blokuje");
+});
