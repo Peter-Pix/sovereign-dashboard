@@ -44,7 +44,7 @@ function RoadmapCard({ p, onSelect }) {
           <span className="text-[10px] font-mono text-[#5c5c5c]">0 agentů běží</span>
         )}
         <span className="text-[10px] text-[#5c5c5c]">
-          {p.phases.length} fází · {new Date(p.updatedAt).toLocaleDateString("cs-CZ")}
+          {p.phases.length} fází{p.files > 1 ? ` · ${p.files} souborů sloučeno${p.deduped ? ` (+${p.deduped} dedup)` : ""}` : ""} · {new Date(p.updatedAt).toLocaleDateString("cs-CZ")}
         </span>
       </div>
     </button>
