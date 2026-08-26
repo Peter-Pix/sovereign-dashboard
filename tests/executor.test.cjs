@@ -53,9 +53,11 @@ test("findTaskLine: case-insensitive", () => {
   assert.strictEqual(findTaskLine(lines, "AUDIT api ENDPOINT"), 0);
 });
 
-test("findTaskLine: přeskočí hotové (x) checkboxes", () => {
+test("findTaskLine: matchuje i hotové (x) checkboxes (bug fix)", () => {
+  // Dřív se [x] skipovaly → pokud agent sám odškrtl task, markTaskDone vrátil
+  // "stuck" i když byla práce hotová. Teď [x] matchuje (odškrtnutý = splněný).
   const lines = ["- [x] Hotový task", "- [ ] Teprve udělat"];
-  assert.strictEqual(findTaskLine(lines, "Hotový task"), -1, "Nesmí matchnout hotový");
+  assert.strictEqual(findTaskLine(lines, "Hotový task"), 0, "Měl by matchnout hotový");
   assert.strictEqual(findTaskLine(lines, "Teprve udělat"), 1);
 });
 

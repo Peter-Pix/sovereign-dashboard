@@ -195,7 +195,10 @@ function findTaskLine(lines, taskText) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (!line.includes("[ ]")) continue;
+    // Bug fix: matchuj i [x] řádky. Dřív se [x] skipovaly → pokud agent
+    // sám odškrtl task (nebo text modifikoval), markTaskDone nenašel [ ]
+    // a vrátil "stuck" i když byla práce hotová.
+    if (!line.includes("[") || !line.includes("]")) continue;
 
     const normLine = normalizeTaskText(line);
 
@@ -243,6 +246,10 @@ function markTaskDone(projectName, file, taskText) {
   const lines = content.split("\n");
   const idx = findTaskLine(lines, taskText);
   if (idx === -1) return false;
+
+  // Pokud už je [x], nezměníme nic (práce je hotnáš — není to stuck)
+  const line = lines[idx];
+  if (line.includes("[x]")) return true;
 
   // Atomický zápis (zápis do temp + rename), aby se zabránilo poškození při concurrent čtení
   const newContent = lines.map((l, i) => (i === idx ? l.replace("[ ]", "[x]") : l)).join("\n");
@@ -503,6 +510,15 @@ function resetExecutionState() {
   executionState.paused = false;
 }
 
+// Obohatí aktivní exekuce o elapsed time (pro UI transparentnost).
+function withElapsed(active) {
+  const now = Date.now();
+  return active.map((a) => ({
+    ...a,
+    elapsedMs: a.startedAt ? now - new Date(a.startedAt).getTime() : 0,
+  }));
+}
+
 function getExecutionState() {
   const perProject = {};
   for (const a of executionState.active) {
@@ -517,7 +533,7 @@ function getExecutionState() {
       total: LIMITS.MAX_CONCURRENT,
       used: executionState.active.length,
     },
-    active: executionState.active,          // pole běžících exekucí
+    active: withElapsed(executionState.active), // běžící exekuce + elapsed
     perProject,                            // { projectName: pocetBezicich }
     runningAgents: executionState.active.length,
   };
