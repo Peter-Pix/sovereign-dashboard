@@ -1,100 +1,73 @@
-// Roadmapy — přehled roadmap napříč projekty + autonomní exekuce (queue).
-import { useState, useEffect } from "react";
+// Roadmapy — ONE SOURCE OF TRUTH (/api/roadmaps/state).
+// Server agreguje markdown roadmapy + live exekuční stav do jednoho modelu.
+// UI čte JEN tento endpoint — žádné klient-side spojování dvou zdrojů.
+import { useState, useEffect, useMemo } from "react";
 import { API } from "../config";
 import Spinner from "./Spinner";
 
+// ----- Barvy dle progress (sdílené) -----
+const progColor = (pct) => (pct >= 70 ? "#3ecf8e" : pct >= 30 ? "#e5b34b" : "#e85d5d");
+
 function ProgressBar({ pct }) {
-  const color = pct >= 70 ? "#3ecf8e" : pct >= 30 ? "#e5b34b" : "#e85d5d";
   return (
     <div className="h-1.5 bg-[#232323] rounded-full overflow-hidden">
-      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: progColor(pct) }} />
     </div>
   );
 }
 
-function RoadmapCard({ r, onSelect, running = 0, slotsUsed = 0, slotsTotal = 3 }) {
+// ----- Přehledová karta projektu -----
+function RoadmapCard({ p, onSelect }) {
+  const running = p.execution?.running || 0;
   return (
     <button
-      onClick={() => onSelect(r.project)}
+      onClick={() => onSelect(p.project)}
       className="text-left bg-[#111] border border-[#232323] rounded-xl p-4 hover:border-[#8f6f26] transition-all w-full"
     >
       <div className="flex items-center justify-between mb-2">
-        <h4 className="text-sm font-semibold text-[#e8e8e8] truncate">{r.project}</h4>
-        <span className="text-[10px] font-mono text-[#5c5c5c] shrink-0">{r.file}</span>
+        <h4 className="text-sm font-semibold text-[#e8e8e8] truncate">{p.project}</h4>
+        <span className="text-[10px] font-mono text-[#5c5c5c] shrink-0">{p.file}</span>
       </div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] text-[#9d9d9d]">
-          {r.doneCheckboxes}/{r.totalCheckboxes} úkolů
-        </span>
-        <span className="text-[11px] font-bold" style={{ color: r.progress >= 70 ? "#3ecf8e" : r.progress >= 30 ? "#e5b34b" : "#e85d5d" }}>
-          {r.progress}%
-        </span>
+        <span className="text-[11px] text-[#9d9d9d]">{p.done}/{p.total} úkolů</span>
+        <span className="text-[11px] font-bold" style={{ color: progColor(p.progress) }}>{p.progress}%</span>
       </div>
-      <ProgressBar pct={r.progress} />
+      <ProgressBar pct={p.progress} />
       <div className="flex items-center justify-between mt-2">
         {running > 0 ? (
           <span className="text-[10px] font-mono text-[#C89B3C] bg-[rgba(200,155,60,0.12)] border border-[rgba(200,155,60,0.3)] rounded px-1.5 py-0.5">
-            ● {running} agent{running > 1 ? "i" : ""} běží ({slotsUsed}/{slotsTotal})
+            ● {running} agent{running > 1 ? "i" : ""} běží
           </span>
         ) : (
-          <span className="text-[10px] font-mono text-[#5c5c5c]">
-            0 agentů běží
-          </span>
+          <span className="text-[10px] font-mono text-[#5c5c5c]">0 agentů běží</span>
         )}
+        <span className="text-[10px] text-[#5c5c5c]">
+          {p.phases.length} fází · {new Date(p.updatedAt).toLocaleDateString("cs-CZ")}
+        </span>
       </div>
-      <p className="text-[10px] text-[#5c5c5c] mt-1">
-        {r.phases.length} fází · aktualizováno {new Date(r.updatedAt).toLocaleDateString("cs-CZ")}
-      </p>
     </button>
   );
 }
 
-function RoadmapDetail({ project, onBack }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [queueState, setQueueState] = useState(null);
+// ----- Detail roadmapy projektu -----
+function RoadmapDetail({ project, data, state, onBack }) {
   const [executing, setExecuting] = useState(false);
   const [execResult, setExecResult] = useState(null);
+  const [togglePause, setTogglePause] = useState(false);
 
-  const loadDetail = () => {
-    fetch(`${API}/api/roadmaps/${project}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setData(d);
-        setLoading(false);
-      })
-      .catch((e) => {
-        setError(e.message);
-        setLoading(false);
-      });
-  };
-
-  // Poll queue state každé 2s
-  useEffect(() => {
-    loadDetail();
-    const poll = () => {
-      fetch(`${API}/api/executor/state`)
-        .then((r) => r.json())
-        .then((d) => setQueueState(d))
-        .catch(() => {});
-    };
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project]);
+  const slotsUsed = state?.slots?.used || 0;
+  const slotsTotal = state?.slots?.total || 3;
+  const allSlotsFull = state?.slots?.allFull || slotsUsed >= slotsTotal;
+  const activeHere = (state?.activeExecutions || []).filter((a) => a.project === project);
+  const isWorking = state?.queue?.workerRunning || state?.queue?.length > 0;
 
   const runQueue = async () => {
     setExecuting(true);
     setExecResult(null);
     try {
-      const res = await fetch(`${API}/api/executor/queue/${project}`, {
+      const res = await fetch(`${API}/api/executor/queue/${encodeURIComponent(project)}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-auth-token": import.meta.env.VITE_AUTH_TOKEN,
-        },
+        headers: { "Content-Type": "application/json", "x-auth-token": import.meta.env.VITE_AUTH_TOKEN },
       });
       const d = await res.json();
       setExecResult(d);
@@ -105,23 +78,13 @@ function RoadmapDetail({ project, onBack }) {
     }
   };
 
-  const togglePause = async () => {
-    const action = queueState?.paused ? "resume" : "pause";
+  const pause = async () => {
+    const action = state?.queue?.paused ? "resume" : "pause";
     await fetch(`${API}/api/executor/queue/${action}`, {
       method: "POST",
       headers: { "x-auth-token": import.meta.env.VITE_AUTH_TOKEN },
     });
   };
-
-  if (loading) return <p className="text-[#5c5c5c]">Načítám roadmapu...</p>;
-  if (error) return <p className="text-[#e85d5d]">Chyba: {error}</p>;
-  if (!data || data.roadmaps.length === 0) return <p className="text-[#5c5c5c]">Žádná roadmapa.</p>;
-
-  const isWorking = queueState?.workerRunning || queueState?.queueLength > 0;
-  const slotsUsed = queueState?.slots?.used || 0;
-  const slotsTotal = queueState?.slots?.total || 3;
-  const allSlotsFull = slotsUsed >= slotsTotal; // všechny sloty obsazené → disabled
-  const activeTasks = queueState?.active || [];
 
   return (
     <div className="space-y-4">
@@ -129,207 +92,192 @@ function RoadmapDetail({ project, onBack }) {
         ← Zpět na přehled
       </button>
 
-      {/* Autonomní exekuce — queue */}
+      {/* Exekuční panel */}
       <div className="bg-[#0d0d0d] border border-[#C89B3C]/30 rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">
-            🤖 Autonomní exekuce
-          </h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">🤖 Autonomní exekuce</h3>
+          <span className="text-[10px] font-mono text-[#5c5c5c]">
+            sloty {slotsUsed}/{slotsTotal}{allSlotsFull && <span className="text-[#e85d5d]"> · plné</span>}
+          </span>
         </div>
 
-        {/* Queue status */}
-        {isWorking && (
-          <div className="mb-3 p-3 bg-[#111] border border-[#232323] rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] text-[#9d9d9d]">
-                Sloty: <span className="text-[#e8e8e8] font-semibold">{slotsUsed}/{slotsTotal}</span>
-                {allSlotsFull && <span className="ml-1 text-[#e85d5d]">· plné</span>}
-              </span>
-              <Spinner label="pracuji" />
-            </div>
-
-            {/* VŠECHNY aktivní tasky (paralelní pool) */}
-            {activeTasks.length > 0 ? (
-              <div className="space-y-1.5 mb-2">
-                {activeTasks.map((a, i) => (
-                  <div key={i} className="flex items-start gap-2 text-[11px]">
-                    <span className="text-[#C89B3C] shrink-0">▶</span>
-                    <span className="text-[#e8e8e8]">"{a.task}"</span>
-                    <span className="text-[#5c5c5c] font-mono shrink-0 ml-auto">
-                      {a.agent}
-                    </span>
-                  </div>
-                ))}
+        {activeHere.length > 0 ? (
+          <div className="mb-3 p-3 bg-[#111] border border-[#232323] rounded-lg space-y-1.5">
+            {activeHere.map((a, i) => (
+              <div key={i} className="flex items-start gap-2 text-[11px]">
+                <span className="text-[#C89B3C] shrink-0">▶</span>
+                <span className="text-[#e8e8e8]">"{a.task}"</span>
+                <span className="text-[#5c5c5c] font-mono shrink-0 ml-auto">{a.agent}</span>
               </div>
-            ) : (
-              <p className="text-[10px] text-[#5c5c5c] mb-2">Fronta zpracovávána...</p>
-            )}
-
-            {queueState?.queueLength > 0 && (
-              <p className="text-[10px] text-[#5c5c5c] mb-2">
-                Zbývá {queueState.queueLength} tasků ve frontě
-              </p>
-            )}
-            <div className="flex gap-2">
-              <button
-                onClick={togglePause}
-                className="text-[10px] px-2 py-1 rounded-md border border-[#232323] text-[#9d9d9d] hover:text-[#C89B3C] hover:border-[#C89B3C] transition-colors"
-              >
-                {queueState?.paused ? "▶ Pokračovat" : "⏸ Pozastavit"}
-              </button>
-            </div>
+            ))}
           </div>
+        ) : isWorking ? (
+          <p className="text-[10px] text-[#5c5c5c] mb-3">Fronta zpracovávána... <Spinner label="pracuji" /></p>
+        ) : (
+          <p className="text-[10px] text-[#5c5c5c] mb-3">Žádné aktivní exekuce na tomto projektu.</p>
         )}
 
-        {/* Spustit celý list */}
-        <button
-          onClick={runQueue}
-          disabled={executing || isWorking || allSlotsFull}
-          className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {executing
-            ? "Zařazuji..."
-            : allSlotsFull
-              ? `Všechny sloty plné (${slotsUsed}/${slotsTotal})`
-              : "▶ Spustit celý task list"}
-        </button>
-        {allSlotsFull && !executing && (
-          <p className="text-[10px] text-[#e85d5d] mt-2">
-            Všechny exekuční sloty jsou obsazené ({slotsUsed}/{slotsTotal}). Počkej na uvolnění.
-          </p>
-        )}
+        <div className="flex gap-2">
+          <button
+            onClick={runQueue}
+            disabled={executing || allSlotsFull}
+            className="bg-[#C89B3C] text-black text-xs font-bold px-3 py-1.5 rounded-md hover:bg-[#e5b34b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {executing ? "Zařazuji..." : allSlotsFull ? `Všechny sloty plné (${slotsUsed}/${slotsTotal})` : "▶ Spustit celý task list"}
+          </button>
+          {isWorking && (
+            <button
+              onClick={pause}
+              className="text-[10px] px-2 py-1 rounded-md border border-[#232323] text-[#9d9d9d] hover:text-[#C89B3C] hover:border-[#C89B3C] transition-colors"
+            >
+              {state?.queue?.paused ? "▶ Pokračovat" : "⏸ Pozastavit"}
+            </button>
+          )}
+        </div>
 
         {execResult && (
           <div className={`mt-3 p-3 rounded-md text-[11px] ${execResult.success ? "bg-[rgba(62,207,142,0.1)] text-[#3ecf8e]" : "bg-[rgba(232,93,93,0.1)] text-[#e85d5d]"}`}>
-            {execResult.success
-              ? `✅ ${execResult.queued} tasků zařazeno do fronty`
-              : `❌ ${execResult.error || execResult.message || "Chyba"}`}
-          </div>
-        )}
-
-        {/* Queue log */}
-        {queueState?.log?.length > 0 && (
-          <div className="mt-3 border-t border-[#232323] pt-2">
-            <p className="text-[10px] text-[#5c5c5c] uppercase tracking-wider mb-1">Průběh</p>
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {queueState.log.slice(0, 10).map((entry, i) => (
-                <p key={i} className="text-[10px] font-mono">
-                  <span className={entry.status === "done" ? "text-[#3ecf8e]" : entry.status === "failed" ? "text-[#e85d5d]" : "text-[#e5b34b]"}>
-                    {entry.status === "done" ? "✓" : entry.status === "failed" ? "✘" : "⚠"}
-                  </span>{" "}
-                  <span className="text-[#9d9d9d]">{entry.task}</span>
-                </p>
-              ))}
-            </div>
+            {execResult.success ? `✅ ${execResult.queued} tasků zařazeno do fronty` : `❌ ${execResult.error || execResult.message || "Chyba"}`}
           </div>
         )}
       </div>
 
-      {data.roadmaps.map((rm, i) => (
-        <div key={i} className="bg-[#111] border border-[#232323] rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-[#e8e8e8]">{rm.file}</h3>
-            <span className="text-[10px] text-[#5c5c5c] font-mono">
-              {rm.parsed.doneCheckboxes}/{rm.parsed.totalCheckboxes} · {rm.parsed.progress}%
-            </span>
-          </div>
-
-          {rm.parsed.phases.map((phase, j) => (
-            <div key={j} className="mb-3">
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="text-xs font-semibold text-[#C89B3C]">{phase.title}</h4>
-                {phase.total > 0 && (
-                  <span className="text-[10px] text-[#5c5c5c]">{phase.done}/{phase.total}</span>
-                )}
-              </div>
-              {phase.items.length > 0 && (
-                <ul className="space-y-1">
-                  {phase.items.map((item, k) => (
-                    <li key={k} className="flex items-start gap-2 text-[11px]">
-                      <span className={item.done ? "text-[#3ecf8e]" : "text-[#5c5c5c]"}>
-                        {item.done ? "✓" : "○"}
-                      </span>
-                      <span className={item.done ? "text-[#5c5c5c] line-through" : "text-[#9d9d9d]"}>
-                        {item.text}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+      {/* Roadmapa — fázové rozpadlé */}
+      {data.phases.map((phase, j) => {
+        const phasePct = phase.total > 0 ? Math.round((phase.done / phase.total) * 100) : 0;
+        const activeTaskTexts = new Set(activeHere.map((a) => a.task));
+        return (
+          <div key={j} className="bg-[#111] border border-[#232323] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-[#e8e8e8]">{phase.title}</h3>
+              <span className="text-[10px] text-[#5c5c5c] font-mono">{phase.done}/{phase.total} · {phasePct}%</span>
             </div>
-          ))}
-        </div>
-      ))}
+            <ProgressBar pct={phasePct} />
+            <ul className="space-y-1 mt-3">
+              {phase.items.map((item, k) => {
+                const isActive = activeTaskTexts.has(item.text);
+                return (
+                  <li key={k} className={`flex items-start gap-2 text-[11px] ${isActive ? "bg-[rgba(200,155,60,0.08)] border border-[rgba(200,155,60,0.3)] rounded px-2 py-1" : ""}`}>
+                    <span className={item.done ? "text-[#3ecf8e]" : isActive ? "text-[#C89B3C]" : "text-[#5c5c5c]"}>
+                      {item.done ? "✓" : isActive ? "▶" : "○"}
+                    </span>
+                    <span className={item.done ? "text-[#5c5c5c] line-through" : isActive ? "text-[#e8e8e8]" : "text-[#9d9d9d]"}>
+                      {item.text}
+                      {isActive && <span className="ml-2 text-[10px] font-mono text-[#C89B3C]">(běží)</span>}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
+// ----- Hlavní přehled -----
 export default function Roadmaps() {
-  const [roadmaps, setRoadmaps] = useState([]);
+  const [data, setData] = useState(null);      // one source of truth
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [execState, setExecState] = useState({ perProject: {}, slots: { total: 3, used: 0 } });
+  const [filter, setFilter] = useState("all"); // all | running
 
   useEffect(() => {
-    fetch(`${API}/api/roadmaps`)
-      .then((r) => r.json())
-      .then((d) => {
-        setRoadmaps(Array.isArray(d) ? d : []);
-        setLoading(false);
-      })
-      .catch((e) => {
-        setError(e.message);
-        setLoading(false);
-      });
-  }, []);
-
-  // Poll stav exekuce (běžící agenti per projekt) — pro badge na kartách
-  useEffect(() => {
-    const poll = () => {
-      fetch(`${API}/api/executor/state`)
+    const load = () => {
+      fetch(`${API}/api/roadmaps/state`)
         .then((r) => r.json())
-        .then((d) => setExecState(d))
-        .catch(() => {});
+        .then((d) => {
+          setData(d);
+          setLoading(false);
+          setError(null);
+        })
+        .catch((e) => setError(e.message));
     };
-    poll();
-    const id = setInterval(poll, 2000);
+    load();
+    const id = setInterval(load, 2000); // one source, jeden poll
     return () => clearInterval(id);
   }, []);
+
+  const projects = useMemo(() => {
+    if (!data?.projects) return [];
+    let list = [...data.projects].sort((a, b) => a.progress - b.progress);
+    if (filter === "running") list = list.filter((p) => (p.execution?.running || 0) > 0);
+    return list;
+  }, [data, filter]);
 
   if (loading) return <p className="text-[#5c5c5c]">Načítám roadmapy...</p>;
   if (error) return <p className="text-[#e85d5d]">Chyba: {error}</p>;
 
-  if (selected) {
-    return <RoadmapDetail project={selected} onBack={() => setSelected(null)} />;
+  // Detail vybraného projektu — najdi ho v one source
+  if (selected && data) {
+    const proj = data.projects.find((p) => p.project === selected);
+    if (proj) return <RoadmapDetail project={selected} data={proj} state={data} onBack={() => setSelected(null)} />;
   }
 
-  if (roadmaps.length === 0) {
+  if (projects.length === 0) {
     return (
       <div className="bg-[#111] border border-[#232323] rounded-xl p-6 text-center">
-        <p className="text-[#5c5c5c] text-sm">Žádné roadmapy nalezeny.</p>
+        <p className="text-[#5c5c5c] text-sm">
+          {filter === "running" ? "Žádné projekty s běžícími agenty." : "Žádné roadmapy nalezeny."}
+        </p>
         <p className="text-[#5c5c5c] text-xs mt-1">Přidej ROADMAP.md do projektu, aby se tu objevil.</p>
       </div>
     );
   }
 
+  const { summary, slots } = data;
+
   return (
     <div className="space-y-4">
+      {/* Souhrnný header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">
-          🗺️ Roadmapy projektů ({roadmaps.length})
-        </h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[#C89B3C]">🗺️ Roadmapy projektů ({projects.length})</h3>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setFilter("all")}
+            className={`text-[10px] px-2 py-1 rounded-md border transition-colors ${filter === "all" ? "border-[#C89B3C] text-[#C89B3C]" : "border-[#232323] text-[#5c5c5c] hover:text-[#9d9d9d]"}`}
+          >
+            Vše
+          </button>
+          <button
+            onClick={() => setFilter("running")}
+            className={`text-[10px] px-2 py-1 rounded-md border transition-colors ${filter === "running" ? "border-[#C89B3C] text-[#C89B3C]" : "border-[#232323] text-[#5c5c5c] hover:text-[#9d9d9d]"}`}
+          >
+            Běží ({summary.runningAgents})
+          </button>
+        </div>
       </div>
+
+      {/* Agregační souhrn — one source summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-[#111] border border-[#232323] rounded-xl p-3">
+          <p className="text-[10px] text-[#5c5c5c] uppercase tracking-wider">Celkový progress</p>
+          <p className="text-xl font-semibold" style={{ color: progColor(summary.overallProgress) }}>{summary.overallProgress}%</p>
+          <p className="text-[10px] text-[#5c5c5c]">{summary.doneTasks}/{summary.totalTasks} úkolů</p>
+        </div>
+        <div className="bg-[#111] border border-[#232323] rounded-xl p-3">
+          <p className="text-[10px] text-[#5c5c5c] uppercase tracking-wider">Projektů</p>
+          <p className="text-xl font-semibold">{summary.projectCount}</p>
+          <p className="text-[10px] text-[#5c5c5c]">s roadmapami</p>
+        </div>
+        <div className="bg-[#111] border border-[#232323] rounded-xl p-3">
+          <p className="text-[10px] text-[#5c5c5c] uppercase tracking-wider">Běžící agenti</p>
+          <p className="text-xl font-semibold text-[#C89B3C]">{summary.runningAgents}</p>
+          <p className="text-[10px] text-[#5c5c5c]">sloty {slots.used}/{slots.total}</p>
+        </div>
+        <div className="bg-[#111] border border-[#232323] rounded-xl p-3">
+          <p className="text-[10px] text-[#5c5c5c] uppercase tracking-wider">Fronta</p>
+          <p className="text-xl font-semibold">{data.queue.length}</p>
+          <p className="text-[10px] text-[#5c5c5c]">{data.queue.workerRunning ? "pracuje" : "idle"}</p>
+        </div>
+      </div>
+
+      {/* Grid projektů */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {roadmaps.map((r) => (
-          <RoadmapCard
-            key={`${r.project}-${r.file}`}
-            r={r}
-            onSelect={setSelected}
-            running={execState.perProject?.[r.project] || 0}
-            slotsUsed={execState.slots?.used || 0}
-            slotsTotal={execState.slots?.total || 3}
-          />
+        {projects.map((p) => (
+          <RoadmapCard key={`${p.project}-${p.file}`} p={p} onSelect={setSelected} />
         ))}
       </div>
     </div>
