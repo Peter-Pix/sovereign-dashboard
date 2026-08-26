@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "bash scripts/start.sh && vite --port 3205",
+    "dev": "bash scripts/dev.sh",
     "dev:frontend": "vite --port 3205",
     "server": "node server/index.cjs",
     "server:start": "bash scripts/start.sh",
@@ -18,7 +18,8 @@
     "test:unit": "node --test tests/unit.test.cjs",
     "test:integration": "node --test tests/integration.test.cjs",
     "test:all": "node --test tests/*.test.cjs",
-    "test:e2e:slow": "playwright test --grep @slow"
+    "test:e2e:slow": "playwright test --grep @slow",
+    "test:lifecycle": "node --test --test-force-exit tests/lifecycle.test.cjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

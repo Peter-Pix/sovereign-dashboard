@@ -36,9 +36,14 @@ restart_count=0
 window_start=$(date +%s)
 
 while true; do
-  # Spustí node přímo, ne přes bash subshell — keepalive shell wrapper
-  node server/index.cjs >> server_debug.log 2>&1
-  exit_code=$?
+  # Spustí node přímo, ne přes bash subshell — keepalive shell wrapper.
+  # DŮLEŽITÉ: node MUSÍ být v `if` podmínce, jinak `set -e` ukončí wrapper
+  # při nenulovém exit kódu (např. kill -9 → 137) a auto-restart NEFUNGUJE.
+  if node server/index.cjs >> server_debug.log 2>&1; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
 
   if (( exit_code == 0 )); then
     echo "[$(date)] Graceful shutdown. Ukončuji wrapper." >> server_debug.log
