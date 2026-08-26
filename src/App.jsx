@@ -1,7 +1,4 @@
 import { useState, useEffect } from "react";
-import Pulse from "./components/Pulse";
-import Pipeline from "./components/Pipeline";
-import Log from "./components/Log";
 import Agents from "./components/Agents";
 import ProjectDetail from "./components/ProjectDetail";
 import Paparazzi from "./components/Paparazzi";
@@ -13,17 +10,14 @@ import AlertBell from "./components/AlertBell";
 import AlertFeed from "./components/AlertFeed";
 
 const tabs = [
-  { id: "pulse", label: "Pulse" },
-  { id: "pipeline", label: "Pipeline" },
+  { id: "paparazzi", label: "Projekty" },
+  { id: "roadmaps", label: "Roadmapy" },
   { id: "leads", label: "Leady" },
   { id: "agents", label: "Agenti" },
-  { id: "paparazzi", label: "Paparazzi" },
-  { id: "roadmaps", label: "Roadmapy" },
-  { id: "log", label: "Log" },
 ];
 
 function App() {
-  const [activeTab, setActiveTab] = useState("pulse");
+  const [activeTab, setActiveTab] = useState("paparazzi");
   const [selectedProject, setSelectedProject] = useState(null);
   const [alertFeedOpen, setAlertFeedOpen] = useState(false);
   const [now, setNow] = useState(new Date());
@@ -35,7 +29,7 @@ function App() {
 
   const handleSelectProject = (name) => {
     setSelectedProject(name);
-    setActiveTab("pulse");
+    setActiveTab("paparazzi");
   };
 
   const handleBack = () => {
@@ -99,13 +93,10 @@ function App() {
           />
         ) : (
           <>
-            {activeTab === "pulse" && <Pulse onSelectProject={handleSelectProject} />}
-            {activeTab === "pipeline" && <Pipeline />}
+            {activeTab === "paparazzi" && <Paparazzi onSelectProject={handleSelectProject} />}
+            {activeTab === "roadmaps" && <Roadmaps />}
             {activeTab === "leads" && <Leads />}
             {activeTab === "agents" && <Agents />}
-            {activeTab === "paparazzi" && <Paparazzi />}
-            {activeTab === "roadmaps" && <Roadmaps />}
-            {activeTab === "log" && <Log />}
           </>
         )}
       </main>
@@ -115,6 +106,16 @@ function App() {
         <span>Sovereign OS &middot; Central Brain</span>
         <span className="text-[#C89B3C]">The Spine is live</span>
       </footer>
+
+      {/* Globální modály — Command Palette (Cmd+K) + Alert Feed */}
+      <CommandPalette
+        tabs={tabs}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onSelectProject={handleSelectProject}
+        onClose={() => {}}
+      />
+      {alertFeedOpen && <AlertFeed onClose={() => setAlertFeedOpen(false)} />}
     </div>
   );
 }

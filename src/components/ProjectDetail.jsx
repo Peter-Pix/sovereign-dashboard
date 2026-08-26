@@ -106,7 +106,7 @@ export default function ProjectDetail({ projectName, onBack }) {
         onClick={onBack}
         className="text-xs text-[#C89B3C] hover:text-[#8f6f26] mb-4"
       >
-        ← Zpět na Pulse
+        ← Zpět na přehled
       </button>
 
       {/* Header */}

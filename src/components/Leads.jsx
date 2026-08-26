@@ -94,7 +94,7 @@ export default function Leads() {
       {loading ? (
         <p className="text-[#5c5c5c]">Načítám leady...</p>
       ) : filtered.length === 0 ? (
-        <p className="text-[#5c5c5c]">Žádné leady. Spusť Scouta v Pipeline tabu.</p>
+        <p className="text-[#5c5c5c]">Žádné leady. Spusť Scouta v záložce Agenti.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {filtered.map((lead, i) => {

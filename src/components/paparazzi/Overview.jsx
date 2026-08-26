@@ -8,7 +8,7 @@ import { fmtBytes } from "./constants";
 import { API as API_URL } from "../../config";
 import Spinner from "../Spinner";
 
-export default function Overview({ summary, projects, system, cached, refreshTrigger, onAddBug }) {
+export default function Overview({ summary, projects, system, cached, refreshTrigger, onAddBug, onSelectProject }) {
   const [report, setReport] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamStartedAt, setStreamStartedAt] = useState(null);
@@ -147,7 +147,7 @@ export default function Overview({ summary, projects, system, cached, refreshTri
 
       <div className="grid grid-cols-1 sm:grid-cols-cols-2 lg:grid-cols-3 gap-3">
         {projects.map((p) => (
-          <ProjectCard key={p.name} p={p} onAddBug={onAddBug} />
+          <ProjectCard key={p.name} p={p} onAddBug={onAddBug} onSelectProject={onSelectProject} />
         ))}
       </div>
     </div>

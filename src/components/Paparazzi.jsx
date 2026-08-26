@@ -5,7 +5,7 @@ import Overview from "./paparazzi/Overview";
 import Captures from "./paparazzi/Captures";
 import History from "./paparazzi/History";
 
-export default function Paparazzi() {
+export default function Paparazzi({ onSelectProject }) {
   const [captures, setCaptures] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -124,6 +124,7 @@ export default function Paparazzi() {
           cached={data?.cached}
           refreshTrigger={refreshing}
           onAddBug={addBugOptimistically}
+          onSelectProject={onSelectProject}
         />
       ) : view === "captures" ? (
         <Captures captures={filtered} tags={tags} filter={filter} setFilter={setFilter} />

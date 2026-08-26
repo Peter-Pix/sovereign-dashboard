@@ -5,7 +5,7 @@ import { MiniStat } from "./Stat";
 import { API as API_URL } from "../../config";
 import Spinner from "../Spinner";
 
-export default function ProjectCard({ p, onAddBug }) {
+export default function ProjectCard({ p, onAddBug, onSelectProject }) {
   const [isAdding, setIsAdding] = useState(false);
   const [bugTitle, setBugTitle] = useState("");
   const [agentRunning, setAgentRunning] = useState(false);
@@ -94,6 +94,14 @@ export default function ProjectCard({ p, onAddBug }) {
 
       {/* Action Center */}
       <div className="flex gap-1 mb-3">
+        {onSelectProject && (
+          <button
+            onClick={() => onSelectProject(p.name)}
+            className="flex-1 text-[10px] uppercase tracking-wider font-semibold px-2 py-1 rounded-md border border-[#232323] text-[#9d9d9d] hover:text-[#C89B3C] hover:border-[#C89B3C] transition-colors"
+          >
+            📄 Detail
+          </button>
+        )}
         <button
           onClick={handleRunAgent}
           disabled={agentRunning}
