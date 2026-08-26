@@ -102,6 +102,15 @@ export default function ProjectDetail({ projectName, onBack }) {
   };
 
   const runningHere = execState.perProject?.[projectName] || 0;
+  const pausedHere = (execState.pausedProcesses || []).filter((p) => p.project === projectName);
+
+  const pauseProcess = async (key) => {
+    await fetch(`${API}/api/executor/process/pause`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ key }),
+    });
+  };
   const slotsUsed = execState.slots?.used || 0;
   const slotsTotal = execState.slots?.total || 3;
   const allSlotsFull = slotsUsed >= slotsTotal;
@@ -156,6 +165,13 @@ export default function ProjectDetail({ projectName, onBack }) {
                   <span className="text-[#C89B3C] shrink-0">▶</span>
                   <span className="text-[#e8e8e8]">"{a.task}"</span>
                   <span className="text-[#C89B3C] font-mono shrink-0 ml-auto whitespace-nowrap">⏱ {fmtElapsed(a.elapsedMs)}</span>
+                  <button
+                    onClick={() => pauseProcess(a.key)}
+                    title="Pozastavit tento proces"
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-[#232323] text-[#9d9d9d] hover:text-[#e85d5d] hover:border-[#e85d5d] transition-colors shrink-0"
+                  >
+                    ⏸
+                  </button>
                 </div>
                 <div className="flex items-center gap-2 pl-5 text-[10px] text-[#5c5c5c]">
                   <span className="font-mono">{a.agent}</span>
@@ -170,6 +186,18 @@ export default function ProjectDetail({ projectName, onBack }) {
               ? `${runningHere} agent${runningHere > 1 ? "i" : ""} běží na jiném projektu`
               : "Žádné aktivní exekuce na tomto projektu."}
           </p>
+        )}
+
+        {pausedHere.length > 0 && (
+          <div className="mb-3 p-3 bg-[#111] border border-[#e85d5d]/30 rounded-lg space-y-1">
+            <p className="text-[10px] text-[#e85d5d] uppercase tracking-wider">⏸ Pozastavené procesy</p>
+            {pausedHere.map((pp, i) => (
+              <div key={i} className="flex items-center gap-2 text-[10px]">
+                <span className="text-[#e85d5d]">⏸</span>
+                <span className="text-[#9d9d9d]">{pp.task}</span>
+              </div>
+            ))}
+          </div>
         )}
 
         {/* Tlačítko spustit roadmap — disabled, když jsou všechny sloty plné */}
@@ -313,9 +341,21 @@ export default function ProjectDetail({ projectName, onBack }) {
                 {line}
               </p>
             ))
-          ) : (
+          ) : null}
+
+        {pausedHere.length > 0 && (
+          <div className="mb-3 p-3 bg-[#111] border border-[#e85d5d]/30 rounded-lg space-y-1">
+            <p className="text-[10px] text-[#e85d5d] uppercase tracking-wider">⏸ Pozastavené</p>
+            {pausedHere.map((pp, i) => (
+              <div key={i} className="flex items-center gap-2 text-[10px]">
+                <span className="text-[#e85d5d]">⏸</span>
+                <span className="text-[#9d9d9d]">{pp.task}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
             <p className="text-xs text-[#5c5c5c]">Žádné commity</p>
-          )}
         </div>
       </div>
     </div>

@@ -71,6 +71,15 @@ function RoadmapDetail({ project, data, state, onBack }) {
   const slotsTotal = state?.slots?.total || 3;
   const allSlotsFull = state?.slots?.allFull || slotsUsed >= slotsTotal;
   const activeHere = (state?.activeExecutions || []).filter((a) => a.project === project);
+  const pausedHere = (state?.queue?.pausedProcesses || []).filter((p) => p.project === project);
+
+  const pauseProcess = async (key) => {
+    await fetch(`${API}/api/executor/process/pause`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-auth-token": import.meta.env.VITE_AUTH_TOKEN },
+      body: JSON.stringify({ key }),
+    });
+  };
   const isWorking = state?.queue?.workerRunning || state?.queue?.length > 0;
 
   const runQueue = async () => {
@@ -121,6 +130,13 @@ function RoadmapDetail({ project, data, state, onBack }) {
                   <span className="text-[#C89B3C] shrink-0">▶</span>
                   <span className="text-[#e8e8e8]">"{a.task}"</span>
                   <span className="text-[#C89B3C] font-mono shrink-0 ml-auto whitespace-nowrap">⏱ {fmtElapsed(a.elapsedMs)}</span>
+                  <button
+                    onClick={() => pauseProcess(a.key)}
+                    title="Pozastavit tento proces"
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-[#232323] text-[#9d9d9d] hover:text-[#e85d5d] hover:border-[#e85d5d] transition-colors shrink-0"
+                  >
+                    ⏸
+                  </button>
                 </div>
                 <div className="flex items-center gap-2 pl-5 text-[10px] text-[#5c5c5c]">
                   <span className="font-mono">{a.agent}</span>
@@ -130,7 +146,21 @@ function RoadmapDetail({ project, data, state, onBack }) {
               </div>
             ))}
           </div>
-        ) : isWorking ? (
+        ) : null}
+
+        {pausedHere.length > 0 && (
+          <div className="mb-3 p-3 bg-[#111] border border-[#e85d5d]/30 rounded-lg space-y-1">
+            <p className="text-[10px] text-[#e85d5d] uppercase tracking-wider">⏸ Pozastavené procesy</p>
+            {pausedHere.map((pp, i) => (
+              <div key={i} className="flex items-center gap-2 text-[10px]">
+                <span className="text-[#e85d5d]">⏸</span>
+                <span className="text-[#9d9d9d]">{pp.task}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeHere.length === 0 && pausedHere.length === 0 && isWorking ? (
           <p className="text-[10px] text-[#5c5c5c] mb-3">Fronta zpracovávána... <Spinner label="pracuji" /></p>
         ) : (
           <p className="text-[10px] text-[#5c5c5c] mb-3">Žádné aktivní exekuce na tomto projektu.</p>
