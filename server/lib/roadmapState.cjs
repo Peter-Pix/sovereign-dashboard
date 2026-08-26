@@ -35,12 +35,13 @@ function buildMergedProject(projectName, active, perProject, AGENT_TASKS) {
   const phases = Object.values(phaseMap);
   const total = tasks.length;
   const done = tasks.filter((t) => t.done).length;
+  const stats = dedupStats(projectName); // jednou, ne 2×
 
   return {
     project: projectName,
     file: tasks[0].canonicalFile, // canonical soubor pro UI
-    files: dedupStats(projectName).files, // kolik souborů bylo sloučeno
-    deduped: dedupStats(projectName).deduped, // kolik duplicit odstraněno
+    files: stats.files, // kolik souborů bylo sloučeno
+    deduped: stats.deduped, // kolik duplicit odstraněno
     progress: total > 0 ? Math.round((done / total) * 100) : 0,
     done,
     total,

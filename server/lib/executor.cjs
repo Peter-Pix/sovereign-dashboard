@@ -175,8 +175,10 @@ function findNextTask(projectName) {
 // Nově: normalizujeme obě strany, porovnáváme CELÉ řetězce, ale ne case-sensitive
 // ====================================================================
 function normalizeTaskText(text) {
-  return text
+  return String(text || "")
     .replace(/[#*_~`]/g, "")     // odstraní markdown formátování
+    .normalize("NFD")            // rozlož precomposed znaky (ě → e + combining mark)
+    .replace(/[\u0300-\u036f]/g, "") // odstraní diakritiku (konzistentní s roadmapMerge)
     .replace(/\s+/g, " ")        // srazí více mezer
     .trim()
     .toLowerCase();
@@ -319,87 +321,76 @@ function runTaskAgent(agentName, projectName, taskText, callback, model) {
 
   // MCP sekci načteme async — agenty mají přístup k MCP tools,
   // ale model musí vědět, že existují. Načtení je best-effort (nikdy nefailne).
-  buildMcpContextSection()
-    .then((mcpSection) => {
-      const basePrompt = `Jsi ${task.name} — Sovereign OS. Pracuješ na projektu "${projectName}" v ${projectDir}.\n\nÚKOL Z ROADMAPY: ${taskText}${contextSection}\n\nPOSTUP:
+  const runAgentWithPrompt = (prompt, cb) => {
+    const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", execModel, "-m", prompt];
+    let finished = false;
+    const timeout = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      cb(new Error("Agent exekuce timeout (5 min)"));
+    }, LIMITS.AGENT_TIMEOUT_MS);
+
+    execFile("openclaw", args, {
+      timeout: LIMITS.AGENT_TIMEOUT_MS,
+      maxBuffer: 10 * 1024 * 1024,
+      killSignal: "SIGKILL",
+      env: { ...process.env, FORCE_COLOR: "0" },
+    }, (err, stdout, stderr) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      if (err) {
+        const snippet = (stderr || "").slice(0, 500);
+        return cb(new Error(`Exekuce selhala: ${err.message}${snippet ? ` — stderr: ${snippet}` : ""}`));
+      }
+      try {
+        const data = JSON.parse(stdout);
+        const payloads = data.result?.payloads || [];
+        const text = payloads.map((p) => p.text || "").join("\n");
+        cb(null, { text, agent: task.name });
+      } catch {
+        let text = (stdout || "").trim();
+        if (!text) text = "(Agent dokončil, ale nevrátil žádný výstup.)";
+        else if (text.length > 2000) text = text.slice(0, 2000) + "\n[... truncated]";
+        cb(null, { text, agent: task.name });
+      }
+    });
+  };
+
+  // Společné zpracování selfCorrect výsledku
+  const handleSelfCorrect = (result) => {
+    const summary = result.success
+      ? `✓ Task dokončen na ${result.attempts}. pokus. Testy prošly.`
+      : `⚠ Task dokončen po ${result.attempts} pokusech. Testy stále failují.`;
+    const text = [result.finalResult?.text || "", "", "---", summary, "", `Test command: ${result.testResult?.command || "none"}`, `Test output: ${(result.testResult?.stdout || "").slice(0, 500)}`].join("\n");
+    callback(null, {
+      text,
+      agent: task.name,
+      attempts: result.attempts,
+      success: result.success,
+    });
+  };
+
+  const basePrompt = `Jsi ${task.name} — Sovereign OS. Pracuješ na projektu "${projectName}" v ${projectDir}.\n\nÚKOL Z ROADMAPY: ${taskText}${contextSection}\n\nPOSTUP:
 1. Použij výše uvedený kontext (README, kód, dokumentaci).
 2. Dokonči konkrétně tento úkol: "${taskText}".
 3. Proveď skutečné změny (uprav soubory, doplň dokumentaci, oprav kód).
 4. Po změnách spusť testy příkazem, který najdeš v package.json nebo pomocí "node --test".
 5. Pokud testy failují, OPRAV CHYBU a znovu je spusť. Max 3 pokusy.
-6. Zapiš shrnutí toho, co jsi udělal, do ${path.join(config.SOVEREIGN_DIR, "workspaces", task.workspace, "roadmap-task-" + projectName + ".json")}.${mcpSection}
+6. Zapiš shrnutí toho, co jsi udělal, do ${path.join(config.SOVEREIGN_DIR, "workspaces", task.workspace, "roadmap-task-" + projectName + ".json")}.`;
 
-Buď konkrétní a věcný. Pracuj jen na tomto úkolu, ne na jiných.`;
-
-      const runAgentWithPrompt = (prompt, cb) => {
-        const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", execModel, "-m", prompt];
-        let finished = false;
-        const timeout = setTimeout(() => {
-          if (finished) return;
-          finished = true;
-          cb(new Error("Agent exekuce timeout (5 min)"));
-        }, LIMITS.AGENT_TIMEOUT_MS);
-
-        execFile("openclaw", args, {
-          timeout: LIMITS.AGENT_TIMEOUT_MS,
-          maxBuffer: 10 * 1024 * 1024,
-          killSignal: "SIGKILL",
-          env: { ...process.env, FORCE_COLOR: "0" },
-        }, (err, stdout, stderr) => {
-          if (finished) return;
-          finished = true;
-          clearTimeout(timeout);
-          if (err) {
-            const snippet = (stderr || "").slice(0, 500);
-            return cb(new Error(`Exekuce selhala: ${err.message}${snippet ? ` — stderr: ${snippet}` : ""}`));
-          }
-          try {
-            const data = JSON.parse(stdout);
-            const payloads = data.result?.payloads || [];
-            const text = payloads.map((p) => p.text || "").join("\n");
-            cb(null, { text, agent: task.name });
-          } catch {
-            let text = (stdout || "").trim();
-            if (!text) text = "(Agent dokončil, ale nevrátil žádný výstup.)";
-            else if (text.length > 2000) text = text.slice(0, 2000) + "\n[... truncated]";
-            cb(null, { text, agent: task.name });
-          }
-        });
-      };
-
-      selfCorrect(runAgentWithPrompt, projectDir, basePrompt)
-        .then((result) => {
-          const summary = result.success
-            ? `✓ Task dokončen na ${result.attempts}. pokus. Testy prošly.`
-            : `⚠ Task dokončen po ${result.attempts} pokusech. Testy stále failují.`;
-          const text = [result.finalResult?.text || "", "", "---", summary, "", `Test command: ${result.testResult?.command || "none"}`, `Test output: ${(result.testResult?.stdout || "").slice(0, 500)}`].join("\n");
-          callback(null, {
-            text,
-            agent: task.name,
-            attempts: result.attempts,
-            success: result.success,
-          });
-        })
+  // MCP sekci přidáme best-effort (selhání = spustíme bez ní)
+  buildMcpContextSection()
+    .then((mcpSection) => {
+      const prompt = basePrompt + mcpSection;
+      selfCorrect(runAgentWithPrompt, projectDir, prompt)
+        .then(handleSelfCorrect)
         .catch((err) => callback(err));
     })
     .catch(() => {
       // MCP načtení selhalo — spustíme bez MCP sekce (graceful degradation)
-      const basePrompt = `Jsi task.name — Sovereign OS. Pracuješ na projektu "${projectName}" v ${projectDir}.\n\nÚKOL Z ROADMAPY: ${taskText}${contextSection}`;
-      const runAgentWithPrompt = (prompt, cb) => {
-        const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", execModel, "-m", prompt];
-        execFile("openclaw", args, { timeout: LIMITS.AGENT_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024, killSignal: "SIGKILL", env: { ...process.env, FORCE_COLOR: "0" } }, (err, stdout, stderr) => {
-          if (err) return cb(new Error(`Exekuce selhala: ${err.message}`));
-          try {
-            const data = JSON.parse(stdout);
-            const payloads = data.result?.payloads || [];
-            cb(null, { text: payloads.map((p) => p.text || "").join("\n"), agent: task.name });
-          } catch {
-            cb(null, { text: (stdout || "").slice(0, 1000), agent: task.name });
-          }
-        });
-      };
       selfCorrect(runAgentWithPrompt, projectDir, basePrompt)
-        .then((result) => callback(null, { text: result.finalResult?.text || "", agent: task.name, success: result.success }))
+        .then(handleSelfCorrect)
         .catch((err) => callback(err));
     });
 }

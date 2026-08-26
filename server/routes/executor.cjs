@@ -57,22 +57,6 @@ module.exports = function registerExecutor(app, deps) {
     }
   }));
 
-  app.post("/api/executor/run-all/:project",
-    requireAuth,
-    rateLimitMiddleware.rateLimitByRoute("/api/executor/run-all/:project"),
-    asyncHandler(async (req, res) => {
-    const { project } = req.params;
-    if (!isSafeName(project)) throw new HttpError(400, "Invalid project name");
-
-    const added = enqueueProjectTasks(project);
-    if (added === 0) {
-      return res.json({ success: true, queued: 0, message: "Žádné nové tasky (vše hotové nebo ve frontě)" });
-    }
-
-    startQueueWorker();
-    res.json({ success: true, queued: added, message: `${added} tasků zařazeno do fronty (poll /api/executor/queue pro stav)` });
-  }));
-
   app.post("/api/executor/queue/pause", requireAuth, asyncHandler(async (req, res) => {
     res.json(pauseQueue());
   }));

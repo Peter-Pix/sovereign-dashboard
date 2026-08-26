@@ -12,6 +12,35 @@ const PAPARAZZI_INTERVAL_MS = config.PAPARAZZI_INTERVAL_MS;
 // Cloud model (obsahuje ":cloud" v názvu) se volá na https://ollama.com/api/chat
 // s Bearer tokenem (OLLAMA_API_KEY). Lokální model na localhost:11434/api/generate.
 // Fix: dřív se cloud model volal na lokální endpoint → "Model error".
+// Sdílený stream parser pro Ollama (NDJSON). Vrací slepený text.
+// extractToken(json) — jak vytáhnout token z řádku (liší se cloud vs local).
+async function streamTokens(response, extractToken, onToken) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split("\n");
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const json = JSON.parse(line);
+        const token = extractToken(json);
+        if (typeof token === "string" && token) {
+          fullText += token;
+          if (onToken) onToken(token);
+        }
+        if (json.done) break;
+      } catch (e) {
+        // ignoruj nevalidní JSON
+      }
+    }
+  }
+  return fullText;
+}
+
 async function callOllama(prompt, onToken = null) {
   const model = config.OLLAMA_MODEL;
   const isCloud = String(model).includes(":cloud");
@@ -39,31 +68,8 @@ async function callOllama(prompt, onToken = null) {
       const body = await response.text().catch(() => "");
       throw new Error(`Ollama Cloud error: ${response.status} ${response.statusText}${body ? ` — ${body.slice(0, 200)}` : ""}`);
     }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split("\n");
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const json = JSON.parse(line);
-          // /api/chat stream: { message: { role, content } }
-          const token = json.message?.content ?? "";
-          if (typeof token === "string" && token) {
-            fullText += token;
-            if (onToken) onToken(token);
-          }
-        } catch (e) {
-          // ignoruj nevalidní JSON
-        }
-      }
-    }
-    return fullText;
+    // /api/chat stream: { message: { role, content } }
+    return streamTokens(response, (json) => json.message?.content ?? "", onToken);
   }
 
   // --- Lokální model: localhost/api/generate ---
@@ -76,37 +82,12 @@ async function callOllama(prompt, onToken = null) {
       stream: true,
     }),
   });
-
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(`Ollama API error: ${response.status} ${response.statusText}${body ? ` — ${body.slice(0, 200)}` : ""}`);
   }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let fullText = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split("\n");
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const json = JSON.parse(line);
-        const token = json.response ?? json.identity_layer_json ?? "";
-        if (typeof token === "string") {
-          fullText += token;
-          if (onToken) onToken(token);
-        }
-        if (json.done) break;
-      } catch (e) {
-        // Ignoruj nevalidní JSON řádky
-      }
-    }
-  }
-  return fullText;
+  // /api/generate stream: { response: "..." } (fallback identity_layer_json)
+  return streamTokens(response, (json) => json.response ?? json.identity_layer_json ?? "", onToken);
 }
 
 function buildPaparazziPrompt(system, summary) {

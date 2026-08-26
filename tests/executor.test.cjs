@@ -24,10 +24,11 @@ test("normalizeTaskText: odstraní markdown formátování", () => {
   );
 });
 
-test("normalizeTaskText: srazí mezery a lowercases", () => {
+test("normalizeTaskText: srazí mezery, lowercases, odstraní diakritiku", () => {
+  // Diakritika se odstraňuje (NFD) — konzistentní s roadmapMerge
   assert.strictEqual(
     normalizeTaskText("  AHOJ   Světe  "),
-    "ahoj světe"
+    "ahoj svete"
   );
 });
 

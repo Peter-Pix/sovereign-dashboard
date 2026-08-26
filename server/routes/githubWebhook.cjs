@@ -5,7 +5,7 @@ const { asyncHandler, HttpError, logError } = require("../lib/logger.cjs");
 const { verifySignature, getRepoName, getEventType, pingResponse } = require("../lib/githubWebhook.cjs");
 
 module.exports = function registerGitHubWebhook(app, deps) {
-  const { isSafeName, enqueueProjectTasks, startQueueWorker, alerts, summarizeProjects } = deps;
+  const { isSafeName, enqueueProjectTasks, startQueueWorker, alerts } = deps;
 
   // GitHub webhook endpoint — NENÍ chráněn requireAuth (GitHub neposílá náš token).
   // Místo toho ověřujeme X-Hub-Signature-256.
