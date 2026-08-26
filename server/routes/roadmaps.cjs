@@ -4,7 +4,14 @@ const path = require("path");
 const { asyncHandler, HttpError } = require("../lib/logger.cjs");
 
 module.exports = function registerRoadmaps(app, deps) {
-  const { config, collectRoadmaps, isSafeName } = deps;
+  const { config, collectRoadmaps, isSafeName, buildRoadmapState, getExecutionState, getQueueState } = deps;
+
+  // ONE SOURCE OF TRUTH — agregovaný stav roadmap (markdown + live exekuce).
+  // UI čte jen tento endpoint místo kombinování /api/roadmaps + /api/executor/state.
+  app.get("/api/roadmaps/state", asyncHandler(async (req, res) => {
+    const executorState = { ...getExecutionState(), ...getQueueState() };
+    res.json(buildRoadmapState(executorState));
+  }));
 
   app.get("/api/roadmaps", asyncHandler(async (req, res) => {
     try {

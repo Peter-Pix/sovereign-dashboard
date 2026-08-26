@@ -44,6 +44,7 @@ const { collectSystemData } = require("./lib/system.cjs");
 const { buildPaparazziPrompt, callOllama, gatherAllData, PAPARAZZI_REPORT_DIR, PAPARAZZI_REPORT_FILE, PAPARAZZI_HISTORY_FILE } = require("./lib/paparazzi.cjs");
 const { AGENT_TASKS, runAgentExe, runAgentStream } = require("./lib/agents.cjs");
 const { collectRoadmaps } = require("./lib/roadmaps.cjs");
+const { buildRoadmapState } = require("./lib/roadmapState.cjs");
 const { findNextTask, markTaskDone, runTaskAgent, routeTaskToAgent, executeOneTask, executeAllTasks, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, getExecutionState, resetExecutionState } = require("./lib/executor.cjs");
 
 const app = express();
@@ -94,7 +95,7 @@ function requireAuth(req, res, next) {
 }
 
 // ===== Sdílené dependency pro routes =====
-const deps = { config, requireAuth, logger, modelStore, mcpManager, rateLimitMiddleware, alerts, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, getProjectsCached, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe, runAgentStream, collectRoadmaps, findNextTask, markTaskDone, runTaskAgent, routeTaskToAgent, executeOneTask, executeAllTasks, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, getExecutionState, resetExecutionState };
+const deps = { config, requireAuth, logger, modelStore, mcpManager, rateLimitMiddleware, alerts, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, getProjectsCached, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe, runAgentStream, collectRoadmaps, findNextTask, markTaskDone, runTaskAgent, routeTaskToAgent, executeOneTask, executeAllTasks, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, getExecutionState, resetExecutionState, buildRoadmapState };
 
 // ===== Registrace routes =====
 require("./routes/projects.cjs")(app, deps);
