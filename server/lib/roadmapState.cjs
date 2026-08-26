@@ -9,6 +9,7 @@
 // a centralizuje "co se zobrazuje" na serveru.
 
 const { collectRoadmaps } = require("./roadmaps.cjs");
+const { AGENT_TASKS } = require("./agents.cjs");
 
 // Sestaví kompletní agregovaný stav roadmap.
 // @param {object} executorState — výstup getExecutionState()+getQueueState()
@@ -38,8 +39,10 @@ function buildRoadmapState(executorState) {
         activeTasks: activeHere.map((a) => ({
           task: a.task,
           agent: a.agent,
+          role: AGENT_TASKS[a.agent]?.name || a.agent,  // co agent dělá (role label)
           model: a.model,
           startedAt: a.startedAt,
+          elapsedMs: a.elapsedMs || (a.startedAt ? Date.now() - new Date(a.startedAt).getTime() : 0),
         })),
       },
     };
@@ -69,9 +72,11 @@ function buildRoadmapState(executorState) {
     activeExecutions: active.map((a) => ({
       project: a.project,
       agent: a.agent,
+      role: AGENT_TASKS[a.agent]?.name || a.agent,
       task: a.task,
       model: a.model,
       startedAt: a.startedAt,
+      elapsedMs: a.elapsedMs || (a.startedAt ? Date.now() - new Date(a.startedAt).getTime() : 0),
     })),
     // Fronta — aktuální délka pro všechny projekty
     queue: {

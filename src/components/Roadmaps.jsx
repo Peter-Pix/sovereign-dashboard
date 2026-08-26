@@ -8,6 +8,18 @@ import Spinner from "./Spinner";
 // ----- Barvy dle progress (sdílené) -----
 const progColor = (pct) => (pct >= 70 ? "#3ecf8e" : pct >= 30 ? "#e5b34b" : "#e85d5d");
 
+// Formátuje elapsed ms → "Xs", "Xm Ys", "Xh Ym" (živý čas běhu exekuce)
+function fmtElapsed(ms) {
+  if (ms == null || ms < 0) return "—";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) return `${m}m ${rs}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
 function ProgressBar({ pct }) {
   return (
     <div className="h-1.5 bg-[#232323] rounded-full overflow-hidden">
@@ -104,10 +116,17 @@ function RoadmapDetail({ project, data, state, onBack }) {
         {activeHere.length > 0 ? (
           <div className="mb-3 p-3 bg-[#111] border border-[#232323] rounded-lg space-y-1.5">
             {activeHere.map((a, i) => (
-              <div key={i} className="flex items-start gap-2 text-[11px]">
-                <span className="text-[#C89B3C] shrink-0">▶</span>
-                <span className="text-[#e8e8e8]">"{a.task}"</span>
-                <span className="text-[#5c5c5c] font-mono shrink-0 ml-auto">{a.agent}</span>
+              <div key={i} className="flex flex-col gap-0.5 text-[11px] border-b border-[#232323] last:border-b-0 pb-1.5 last:pb-0">
+                <div className="flex items-start gap-2">
+                  <span className="text-[#C89B3C] shrink-0">▶</span>
+                  <span className="text-[#e8e8e8]">"{a.task}"</span>
+                  <span className="text-[#C89B3C] font-mono shrink-0 ml-auto whitespace-nowrap">⏱ {fmtElapsed(a.elapsedMs)}</span>
+                </div>
+                <div className="flex items-center gap-2 pl-5 text-[10px] text-[#5c5c5c]">
+                  <span className="font-mono">{a.agent}</span>
+                  {a.role && <span>· {a.role}</span>}
+                  {a.model && <span className="font-mono hidden sm:inline">· {a.model.split("/").pop()}</span>}
+                </div>
               </div>
             ))}
           </div>
