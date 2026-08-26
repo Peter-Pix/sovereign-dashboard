@@ -130,16 +130,24 @@ function mergeProjectRoadmaps(projectName) {
         const norm = normalizeTask(item.text);
         if (norm.length === 0) continue;
 
-        const exact = seen.find((s) => s.key === exactKey(item.text));
+        // Dedup porovnává JEN tasky z JINÝCH souborů.
+        // Tasky v rámci jednoho souboru jsou vždy různé (každý řádek = samostatný task)
+        // a nesmí se spojovat — dedup má smysl jen mezi RŮZNÝMI soubory,
+        // kde stejný task může být formulovaný jinak (neplýtvá tokeny).
+        // Bez toho by se tasky lišící se jen číslem ("Task 1", "Task 2", ...)
+        // spojily do jednoho (čísla < MIN_WORD_LEN se vyfiltrují z significant words).
+        const fromOtherFiles = seen.filter((s) => !s.sources.includes(pf.file));
+
+        const exact = fromOtherFiles.find((s) => s.key === exactKey(item.text));
         if (exact) {
           // Přidej zdroj k existujícímu tasku (ať se odškrtne v obou)
           if (!exact.sources.includes(pf.file)) exact.sources.push(pf.file);
           continue;
         }
 
-        // Fuzzy match — podobný task už máme
+        // Fuzzy match — podobný task z JINÉHO souboru už máme
         let fuzzyMatch = null;
-        for (const s of seen) {
+        for (const s of fromOtherFiles) {
           if (similarityScore(item.text, s.text) >= SIMILARITY_THRESHOLD) {
             fuzzyMatch = s;
             break;
