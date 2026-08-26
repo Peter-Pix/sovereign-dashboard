@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { API, authHeaders, cachedFetch, invalidateCache } from "../config";
-import Spinner from "./Spinner";
 import AgentStream from "./AgentStream";
 import WebhookSettings from "./WebhookSettings";
 import McpManager from "./McpManager";
@@ -9,8 +8,6 @@ export default function Agents() {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [running, setRunning] = useState({});
-  const [startedAt, setStartedAt] = useState({});
   const [jobLog, setJobLog] = useState([]);
   const [streamingAgent, setStreamingAgent] = useState(null);
 
@@ -25,37 +22,6 @@ export default function Agents() {
         setLoading(false);
       });
   }, []);
-
-  const runAgent = (name) => {
-    if (running[name]) return;
-    setRunning((r) => ({ ...r, [name]: true }));
-    setStartedAt((s) => ({ ...s, [name]: Date.now() }));
-    const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
-    setJobLog((l) => [{ time: ts, agent: name, text: "▶ Job spuštěn — agent pracuje (reálná exekuce)..." }, ...l]);
-    fetch(`${API}/api/agents/${encodeURIComponent(name)}/run`, { method: "POST", headers: authHeaders() })
-      .then((r) => r.json())
-      .then((data) => {
-        const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });
-        if (data.success) {
-          setJobLog((l) => [
-            { time: ts2, agent: name, text: `✔ Job dokončen (${data.tokens || 0} tok): ${(data.text || "").slice(0, 120)}` },
-            ...l,
-          ]);
-        } else {
-          setJobLog((l) => [
-            { time: ts2, agent: name, text: `✘ Selhání: ${data.error || "neznámá chyba"}` },
-            ...l,
-          ]);
-        }
-        setRunning((r) => ({ ...r, [name]: false }));
-        invalidateCache(`${API}/api/agents`);
-      })
-      .catch((err) => {
-        const ts2 = new Date().toLocaleTimeString("en-GB", { hour12: false });
-        setJobLog((l) => [{ time: ts2, agent: name, text: `✘ Chyba: ${err.message}` }, ...l]);
-        setRunning((r) => ({ ...r, [name]: false }));
-      });
-  };
 
   const streamAgent = (name) => {
     setStreamingAgent(name);
@@ -78,9 +44,16 @@ export default function Agents() {
           onDone={(data) => {
             const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
             setJobLog((l) => [
-              { time: ts, agent: streamingAgent, text: `✔ Stream dokončen (${data.tokens || 0} tokens)` },
+              {
+                time: ts,
+                agent: streamingAgent,
+                text: `✔ Dokončeno (${data.tokens || 0} tokens)`,
+                status: "done",
+                detail: data.text || "(Agent nedodal žádný textový výstup)",
+              },
               ...l,
             ]);
+            invalidateCache(`${API}/api/agents`);
           }}
         />
       )}
@@ -102,17 +75,9 @@ export default function Agents() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => streamAgent(agent.name)}
-                disabled={running[agent.name]}
-                className="text-[10px] px-3 py-1.5 rounded-md font-semibold bg-[#1a1a1a] text-[#C89B3C] border border-[#C89B3C]/30 hover:bg-[#C89B3C]/10 disabled:opacity-40 transition-colors"
+                className="text-[10px] px-3 py-1.5 rounded-md font-semibold bg-[#C89B3C] text-[#0a0a0a] hover:bg-[#8f6f26] transition-colors"
               >
-                Stream
-              </button>
-              <button
-                onClick={() => runAgent(agent.name)}
-                disabled={running[agent.name]}
-                className="text-[10px] px-3 py-1.5 rounded-md font-semibold bg-[#C89B3C] text-[#0a0a0a] hover:bg-[#8f6f26] disabled:opacity-40 transition-colors"
-              >
-                {running[agent.name] ? <Spinner label="Běží" startedAt={startedAt[agent.name]} /> : "Spustit job"}
+                ▶ Spustit
               </button>
               <a
                 href={`${API}/api/files?p=${encodeURIComponent(agent.workspacePath + "/manifest.json")}`}
@@ -141,8 +106,16 @@ export default function Agents() {
               <p className="text-xs text-[#5c5c5c]">
                 Role: {agent.manifest.role || agent.manifest.agent || "—"}
               </p>
-              <p className="text-xs text-[#5c5c5c]">
-                Status: {agent.manifest.status || "—"}
+              <p className="text-xs">
+                Status:{" "}
+                <span className={`font-semibold ${
+                  agent.manifest.status === "blocked" ? "text-[#e85d5d]"
+                  : agent.manifest.status === "complete" || agent.manifest.status === "done" ? "text-[#3ecf8e]"
+                  : agent.manifest.status?.includes("ready") ? "text-[#e5b34b]"
+                  : "text-[#9d9d9d]"
+                }`}>
+                  {agent.manifest.status || "—"}
+                </span>
               </p>
               {agent.manifest.completedAt && (
                 <p className="text-xs text-[#5c5c5c]">
@@ -151,6 +124,26 @@ export default function Agents() {
               )}
               {agent.manifest.summary && (
                 <p className="text-xs text-[#9d9d9d] mt-1">{agent.manifest.summary}</p>
+              )}
+              {Array.isArray(agent.manifest.deliverables) && agent.manifest.deliverables.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-[10px] text-[#5c5c5c] uppercase tracking-wider mb-1">Výstupy (deliverables)</p>
+                  <div className="space-y-1">
+                    {agent.manifest.deliverables.map((d, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[10px]">
+                        <span className={`shrink-0 ${
+                          d.status === "complete" ? "text-[#3ecf8e]"
+                          : d.status?.includes("ready") ? "text-[#e5b34b]"
+                          : d.status === "active" ? "text-[#C89B3C]"
+                          : "text-[#5c5c5c]"
+                        }`}>
+                          {d.status === "complete" ? "✓" : d.status?.includes("ready") ? "▲" : d.status === "active" ? "●" : "○"}
+                        </span>
+                        <span className="text-[#9d9d9d] truncate" title={d.path || ""}>{d.name || d.path || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -182,11 +175,18 @@ export default function Agents() {
             Aktivita
           </p>
           {jobLog.map((entry, i) => (
-            <p key={i} className="text-[10px] font-mono text-[#5c5c5c]">
-              <span className="text-[#C89B3C]">{entry.time}</span>{" "}
-              <span className="text-[#9d9d9d]">[{entry.agent}]</span>{" "}
-              {entry.text}
-            </p>
+            <div key={i} className="py-1 border-b border-[#232323] last:border-b-0">
+              <p className="text-[10px] font-mono text-[#5c5c5c]">
+                <span className="text-[#C89B3C]">{entry.time}</span>{" "}
+                <span className="text-[#9d9d9d]">[{entry.agent}]</span>{" "}
+                <span className={entry.status === "error" ? "text-[#e85d5d]" : entry.status === "done" ? "text-[#3ecf8e]" : ""}>{entry.text}</span>
+              </p>
+              {entry.detail && (
+                <pre className="mt-1 text-[10px] font-mono text-[#9d9d9d] bg-[#111] border border-[#232323] rounded p-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-all">
+                  {entry.detail}
+                </pre>
+              )}
+            </div>
           ))}
         </div>
       )}
