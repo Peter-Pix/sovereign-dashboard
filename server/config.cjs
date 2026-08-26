@@ -11,6 +11,12 @@ const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_MODEL || "minimax-m3:cloud";
 module.exports = {
   PORT: 8891,
   PROJECTS_DIR: path.resolve(ROOT, ".."),
+  // Projekty VYŘAZENÉ z exekuce roadmap (srdněle / kam nechceme jít).
+  // Čárkou oddělený seznam — neplýtvá tokeny na nesmysly.
+  get SKIP_PROJECTS() {
+    const raw = process.env.SOVEREIGN_SKIP_PROJECTS || "";
+    return raw.split(",").map((x) => x.trim()).filter(Boolean);
+  },
   SOVEREIGN_DIR,
   PAPARAZZI_DIR: path.join(process.env.HOME, "Library/Mobile Documents/com~apple~CloudDocs/Paparazzi"),
 

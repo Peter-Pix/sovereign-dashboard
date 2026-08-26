@@ -83,6 +83,11 @@ function assertSafeProject(projectName) {
   }
 }
 
+// Je projekt vyřazený z exekuce (srdněle / kam nechceme jít)?
+function isProjectSkipped(projectName) {
+  return config.SKIP_PROJECTS.includes(projectName);
+}
+
 // Mapování tasku → agent podle klíčových slov
 // Všechna klíčová slova jsou normalizovaná (lowercase, bez diakritiky) pro konzistentní matching (viz Bug F)
 const AGENT_ROUTING = [
@@ -135,6 +140,7 @@ function routeTaskToAgent(taskText) {
 // ====================================================================
 function findNextTask(projectName) {
   assertSafeProject(projectName);
+  if (isProjectSkipped(projectName)) return null; // vyřazený projekt
 
   // Dedup merge: projde VŠECHNY roadmap soubory, odstraní duplicity,
   // vrátí jeden seznam s sources[] (kde se odškrtne). Neplýtvá tokeny.
@@ -514,6 +520,7 @@ function enqueueProjectTasks(projectName) {
     console.error(`[Executor] enqueue: ${e.message}`);
     return 0;
   }
+  if (isProjectSkipped(projectName)) return 0; // vyřazený projekt
 
   // Dedup merge — jeden task i když je ve víc souborech. Neplýtvá tokeny.
   const merged = mergeProjectRoadmaps(projectName);

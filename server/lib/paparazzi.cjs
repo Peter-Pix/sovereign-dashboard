@@ -8,18 +8,79 @@ const PAPARAZZI_REPORT_FILE = config.PAPARAZZI_REPORT_FILE;
 const PAPARAZZI_HISTORY_FILE = config.PAPARAZZI_HISTORY_FILE;
 const PAPARAZZI_INTERVAL_MS = config.PAPARAZZI_INTERVAL_MS;
 
+// ===== callOllama — podporuje LOKÁLNÍ i CLOUD modely =====
+// Cloud model (obsahuje ":cloud" v názvu) se volá na https://ollama.com/api/chat
+// s Bearer tokenem (OLLAMA_API_KEY). Lokální model na localhost:11434/api/generate.
+// Fix: dřív se cloud model volal na lokální endpoint → "Model error".
 async function callOllama(prompt, onToken = null) {
+  const model = config.OLLAMA_MODEL;
+  const isCloud = String(model).includes(":cloud");
+
+  if (isCloud) {
+    // --- Cloud model: https://ollama.com/api/chat ---
+    const apiKey = process.env.OLLAMA_API_KEY || process.env.OLLAMA_CLOUD_API_KEY;
+    if (!apiKey) {
+      throw new Error("Cloud model vyžaduje OLLAMA_API_KEY (nenastavený v .env)");
+    }
+    const baseUrl = (process.env.OLLAMA_CLOUD_URL || "https://ollama.com").replace(/\/$/, "");
+    const response = await fetch(baseUrl + "/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: "user", content: prompt }],
+        stream: true,
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Ollama Cloud error: ${response.status} ${response.statusText}${body ? ` — ${body.slice(0, 200)}` : ""}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n");
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const json = JSON.parse(line);
+          // /api/chat stream: { message: { role, content } }
+          const token = json.message?.content ?? "";
+          if (typeof token === "string" && token) {
+            fullText += token;
+            if (onToken) onToken(token);
+          }
+        } catch (e) {
+          // ignoruj nevalidní JSON
+        }
+      }
+    }
+    return fullText;
+  }
+
+  // --- Lokální model: localhost/api/generate ---
   const response = await fetch(config.OLLAMA_URL + "/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: config.OLLAMA_MODEL,
+      model: model,
       prompt: prompt,
       stream: true,
     }),
   });
 
-  if (!response.ok) throw new Error(`Ollama API error: ${response.statusText}`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Ollama API error: ${response.status} ${response.statusText}${body ? ` — ${body.slice(0, 200)}` : ""}`);
+  }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -34,8 +95,6 @@ async function callOllama(prompt, onToken = null) {
       if (!line.trim()) continue;
       try {
         const json = JSON.parse(line);
-        // Guard against missing or non-string response (some Ollama variants
-        // return { identity_layer_json: "..." } instead of { response: "..." })
         const token = json.response ?? json.identity_layer_json ?? "";
         if (typeof token === "string") {
           fullText += token;
