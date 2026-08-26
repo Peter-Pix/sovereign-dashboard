@@ -150,11 +150,6 @@ function McpManager() {
     return "bg-[#C89B3C]/15 text-[#C89B3C] border-[#C89B3C]/30";
   };
 
-
-    t === "http" || t === "streamable-http" || t === "sse"
-      ? "bg-blue-500/15 text-blue-400 border-blue-400/30"
-      : "bg-[#C89B3C]/15 text-[#C89B3C] border-[#C89B3C]/30";
-
   return (
     <div className="bg-[#111] border border-[#232323] rounded-xl p-4 space-y-4">
       <div className="flex items-center justify-between">
