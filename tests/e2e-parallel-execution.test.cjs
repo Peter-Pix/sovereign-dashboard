@@ -11,8 +11,9 @@
 // NEVOLÁ reálný cloud model — runTaskAgent je mocknut přes test seam
 // (EXECUTOR_MOCK_AGENT=1), deterministický a rychlý.
 //
-// Spuštění:
-//   node --test tests/e2e-parallel-execution.test.cjs
+// Spuštění (--test-concurrency=1 je POVINNÉ — testy sdílejí globální
+// executionState, paralelní běh = test pollution / flaky):
+//   node --test --test-concurrency=1 tests/e2e-parallel-execution.test.cjs
 
 const { test } = require("node:test");
 const assert = require("node:assert");
@@ -88,10 +89,14 @@ test("E2E [A]: 3 projekty × 1 task → 3 paralelní sloty (3/3), dokončení �
     const projects = new Set(s3.active.map((a) => a.project));
     assert.strictEqual(projects.size, 3, "3 různé projekty najednou");
 
-    // Dokončení → sloty se uvolní.
+    // Dokončení → sloty se uvolní. Čekáme na dokončení SVÝCH tasků (p_1/2/3),
+    // ne na globální stav — test [B]/[C] enqueue tasky do stejného executionState,
+    // takže active.length nikdy není 0 (test pollution).
+    const myProjects = new Set(["__e2e_p_1", "__e2e_p_2", "__e2e_p_3"]);
     const drained = await waitFor(() => {
       const s = executor.getQueueState();
-      return s.active.length === 0 && s.queueLength === 0;
+      const myActive = s.active.filter((a) => myProjects.has(a.project));
+      return myActive.length === 0;
     }, 60000);
     assert.ok(drained, "všechny tasky dokončeny a sloty uvolněny");
     assert.strictEqual(executor.getQueueState().workerRunning, false);

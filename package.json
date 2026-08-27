@@ -19,7 +19,8 @@
     "test:integration": "node --test tests/integration.test.cjs",
     "test:all": "node --test tests/*.test.cjs",
     "test:e2e:slow": "playwright test --grep @slow",
-    "test:lifecycle": "node --test --test-force-exit tests/lifecycle.test.cjs"
+    "test:lifecycle": "node --test --test-force-exit tests/lifecycle.test.cjs",
+    "test:e2e:parallel": "node --test --test-concurrency=1 --test-force-exit tests/e2e-parallel-execution.test.cjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
