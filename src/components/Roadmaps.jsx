@@ -64,7 +64,7 @@ function RoadmapDetail({ project, data, state, onBack }) {
       {/* Roadmapa — fázové rozpadlé */}
       {data.phases.map((phase, j) => {
         const phasePct = phase.total > 0 ? Math.round((phase.done / phase.total) * 100) : 0;
-        const activeTaskTexts = new Set(activeHere.map((a) => a.task));
+        const activeTaskTexts = new Set((data.execution?.activeTasks || []).map((a) => a.task));
         return (
           <div key={j} className="bg-[#111] border border-[#232323] rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">

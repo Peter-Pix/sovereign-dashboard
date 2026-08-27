@@ -70,35 +70,61 @@ sovereign-dashboard/
 │   ├── index.cjs           # Bootstrap (126 řádků) — lepidlo, žádná logika
 │   ├── config.cjs          # Konfigurace (porty, cesty, limity, LLM)
 │   ├── lib/                # Business logika (čisté funkce + orchestrace)
-│   │   ├── projects.cjs    # Sběr dat o Git projektech + cache
-│   │   ├── system.cjs      # Systémový monitoring (CPU/RAM/disk)
-│   │   ├── paparazzi.cjs   # LLM integrace + sběr dat + prompt
+│   │   ├── alerts.cjs      # Detekce a správa alertů (diskuse, chyby, systém)
 │   │   ├── agents.cjs      # Definice agentů + exekuce přes OpenClaw
-│   │   ├── roadmaps.cjs    # Parsování ROADMAP.md/PLAN.md
+│   │   ├── contextBuilder.cjs # Sestavování kontextu pro agenty (task + environment)
 │   │   ├── executor.cjs    # Autonomní dokončování tasků + loop protection
+│   │   ├── githubWebhook.cjs # Příjem a zpracování GitHub webhooků
+│   │   ├── gitHelper.cjs   # Git operace (clone, fetch, status) + cache
+│   │   ├── logger.cjs      # Jednoduchý logger pro backend
+│   │   ├── mcpManager.cjs  # MCP server integrace — připojení externích databází pro agenty
+│   │   ├── modelStore.cjs  # Správa LLM modelů + routing (deepseek, minimax, nemotron)
+│   │   ├── paparazzi.cjs   # LLM integrace + sběr dat + prompt (Archivist, KimiFix)
+│   │   ├── projects.cjs    # Sběr dat o Git projektech + cache (mtime-based)
+│   │   ├── rateLimiter.cjs # Rate limiting pro externí API (Ollama, GitHub)
+│   │   ├── roadmapMerge.cjs # Dedup více .md roadmap souborů (neplýtvá tokeny)
+│   │   ├── roadmapState.cjs # One source of truth pro roadmapy — stav, sloty, aktivní tasky
+│   │   ├── roadmaps.cjs    # Parsování ROADMAP.md/PLAN.md na strukturovaná data
+│   │   ├── selfCorrector.cjs # Sebekorekce agentů — detekce stuck tasků + retry
+│   │   ├── streamUtils.cjs # Utility pro SSE streams (keep-alive, parsing)
+│   │   ├── system.cjs      # Systémový monitoring (CPU/RAM/disk)
 │   │   └── runner.cjs      # (legacy) runner
 │   └── routes/             # Express routes (register(app, deps) vzor)
-│       ├── projects.cjs    # /api/projects
+│       ├── alerts.cjs      # /api/alerts
 │       ├── agents.cjs      # /api/agents + run-agent
 │       ├── bugs.cjs        # /api/bugs
-│       ├── files.cjs       # /api/files (dir listing)
-│       ├── leads.cjs       # /api/leads
-│       ├── paparazzi.cjs   # /api/paparazzi/*
-│       ├── roadmaps.cjs    # /api/roadmaps
 │       ├── executor.cjs    # /api/executor/*
-│       └── health.cjs      # /health
+│       ├── files.cjs       # /api/files (dir listing)
+│       ├── githubWebhook.cjs # /api/github-webhook
+│       ├── health.cjs      # /health
+│       ├── leads.cjs       # /api/leads
+│       ├── mcp.cjs         # /api/mcp
+│       ├── models.cjs      # /api/models
+│       ├── paparazzi.cjs   # /api/paparazzi/*
+│       ├── projects.cjs    # /api/projects
+│       ├── rateLimits.cjs  # /api/rate-limits
+│       ├── roadmaps.cjs    # /api/roadmaps
+│       └── selfCorrector.cjs # /api/self-corrector
 ├── src/
 │   ├── App.jsx             # Tab shell + routing + clock
 │   ├── config.js           # API base URL + auth + client cache
 │   └── components/
-│       ├── Pulse.jsx       # Git projekt grid
-│       ├── Pipeline.jsx    # Task pipeline + exekuce
-│       ├── Leads.jsx       # Scout leady
+│       ├── AgentStream.jsx # Komponenta pro zobrazování streamu agentova výstupu
 │       ├── Agents.jsx      # Agent workspace viewer
+│       ├── AlertBell.jsx   # Ikona se zvukem pro nové alerty
+│       ├── AlertFeed.jsx   # Seznam posledních alertů
+│       ├── CommandPalette.jsx # Vyhledávání a spouštění akcí (Cmd+K)
+│       ├── ErrorBoundary.jsx # Zachytává chyby v komponentách a zobrazuje fallback UI
+│       ├── ExecutionPanel.jsx # Panel zobrazující stav exekuce (aktivní/ukončené tasky)
+│       ├── Leads.jsx       # Scout leady
+│       ├── Markdown.jsx    # Bezpečné renderování Markdownu
+│       ├── McpManager.jsx  # UI pro správu MCP serverů (připojení/odpojení)
+│       ├── ModelSwitcher.jsx # Přepínač LLM modelů (deepseek, minimax, nemotron)
 │       ├── Paparazzi.jsx   # Orchestrátor (96 řádků)
-│       ├── Roadmaps.jsx    # Roadmapy + autonomní exekuce
-│       ├── Log.jsx         # Operační log
-│       ├── ProjectDetail.jsx
+│       ├── ProjectDetail.jsx # Detail projektu + bug tickety + aktivní exekuce
+│       ├── Roadmaps.jsx    # Roadmapy + autonomní exekuze (hlavní UI)
+│       ├── Spinner.jsx     # Jednoduchý spinner pro načítání
+│       ├── WebhookSettings.jsx # UI pro konfiguraci GitHub webhooků
 │       └── paparazzi/      # Subkomponenty Paparazzi
 │           ├── Overview.jsx    # Report + summary + systém + karty
 │           ├── Captures.jsx    # Foto view + filtr
@@ -107,23 +133,60 @@ sovereign-dashboard/
 │           ├── SystemGauge.jsx # CPU/RAM/disk gauge
 │           ├── Stat.jsx        # Stat + MiniStat
 │           └── constants.js    # Sdílené konstanty
-├── tests/                  # Unit + integration testy (node:test)
-│   ├── unit.test.cjs       # 12 testů čistých funkcí
-│   └── integration.test.cjs # 17 testů API endpointů
-└── e2e/                    # Playwright e2e testy (25 testů)
+├── tests/                  # Unit + integration + e2e testy (node:test + Playwright)
+│   ├── alerts.test.cjs       # Alerty: detekce, správa, stream
+│   ├── commandPalette.test.cjs # Command palette: vyhledávání, historie, akce
+│   ├── contextBuilder.test.cjs # Kontext pro agenty: task + environment
+│   ├── executor.test.cjs     # Executor: pool worker, adaptivní řízení, model routing
+│   ├── githubWebhook.test.cjs # GitHub webhook: parsování, validace, akce
+│   ├── integration.test.cjs  # API endpointy: projekty, agents, executor, health
+│   ├── lifecycle.test.cjs    # Životní cyklus tasků: enqueue, start, pause, resume, done
+│   ├── logger.test.cjs       # Logger: úrovně, formát, stream
+│   ├── mcpManager.test.cjs   # MCP manager: připojení, konfigurace, zdroje
+│   ├── modelStore.test.cjs   # Model store: routing, fallback, cache
+│   ├── rateLimiter.test.cjs  # Rate limiter: token bucket, obnovení, blokování
+│   ├── roadmapMerge.test.cjs # Dedup více .md souborů — exact + fuzzy shoda
+│   ├── roadmapState.test.cjs # Roadmap state: aktivní tasky, sloty, per-project limity
+│   ├── routes.test.cjs       # Route registrace, middleware, error handling
+│   ├── selfCorrector.test.cjs # Sebekorekce: detekce stuck tasků, retry, cooldown
+│   ├── sse.test.cjs          # SSE streamy: připojení, zprávy, restart
+│   ├── unit.test.cjs         # Čisté funkce: normalizaci, parsing, validaci
+│   ├── e2e-parallel-execution.test.cjs # Paralelní exekuce (3 sloty) + adaptivní řízení
+│   └── e2e/                  # Playwright e2e testy (UI + API)
+│       ├── homepage.spec.js          # UI: navigace, projekt grid, základní akce
+│       ├── project-detail.spec.js    # UI: detail projektu, aktivní exekuce, bug tickety
+│       └── roadmaps.spec.js          # UI: roadmapy, autonomní exekuze, sloty, tlačítka
 ```
 
 ## Testy
 
 ```bash
-npm run test:unit         # 12 unit testů (čisté funkce)
-npm run test:integration  # 17 integration testů (API endpointy)
+npm run test:unit         # Čisté funkce (normalizaci, parsing, validaci)
+npm run test:integration  # API endpointy: projekty, agents, executor, health, atd.
 npm run test:all          # unit + integration dohromady
-npm run test:e2e          # 24 e2e testů (Playwright, bez @slow)
+npm run test:e2e          # Playwright e2e testy (bez @slow)
 npm run test:e2e:slow     # pomalé testy (reálná exekuce agenta)
+npm run test:lifecycle    # Životní cyklus tasků: enqueue, start, pause, resume, done
+npm run test              # alias pro test:all
 ```
 
-**Celkem 54 testů** na 3 vrstvách (unit → integration → e2e).
+**Celkem 198 testů** na 3 vrstvách (unit + integration + e2e) ve 18 test souborech:
+- **Unit + integration** (node:test): 16 souborů, 174 testů
+  - alerts, commandPalette, contextBuilder, executor, githubWebhook, integration, lifecycle, logger, mcpManager, modelStore, rateLimiter, roadmapMerge, roadmapState, routes, selfCorrector, sse, unit
+- **E2E** (Playwright): 2 soubory, 24 testů
+  - e2e-parallel-execution (3 testy: paralelita, adaptivní řízení, odškrtnutí)
+  - e2e/ (21 testů: UI navigace, projekt grid, detail projektu, roadmapy, autonomní exekuze)
+
+```bash
+# Spustit jen konkrétní test soubor
+npm run test:unit           # jen unit.test.cjs
+npm run test -- tests/executor.test.cjs   # jen executor testy
+npm run test:e2e -- e2e/roadmaps.spec.js  # jen roadmaps e2e
+
+# Spustit skupiny testů
+npm run test:lifecycle      # lifecycle.test.cjs
+npm run test -- tests/*.test.cjs | grep -E "pass|fail"  # shrnutí
+```
 
 ## Klíčové vlastnosti
 

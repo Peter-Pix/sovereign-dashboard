@@ -47,6 +47,7 @@ const executionState = {
   queueLog: [],
   workerRunning: false,
   paused: false,
+  budgetExhausted: false, // true = globální budget vyčerpán (worker se zastaví, ne točí)
 };
 
 // Pomocná funkce: vyčistí záznam, pokud task úspěšně dokončen (viz Bug B)
@@ -471,6 +472,7 @@ function resetExecutionState() {
   executionState.queueLog = [];
   executionState.workerRunning = false;
   executionState.paused = false;
+  executionState.budgetExhausted = false;
 }
 
 // Obohatí aktivní exekuce o elapsed time (pro UI transparentnost).
@@ -586,6 +588,28 @@ function startQueueWorker() {
     while (executionState.active.length < LIMITS.MAX_CONCURRENT && executionState.queue.length > 0) {
       const check = canExecute();
       if (!check.ok) {
+        // Budget vyčerpán = PERMANENTNÍ stav (ne cooldown). Worker se zastaví
+        // a vyprázdní frontu, místo aby se točil ve smyčce navždy (Bug: worker
+        // uvízl s workerRunning=true, 0 aktivních, N tasků ve frontě).
+        if (executionState.totalExecutions >= LIMITS.MAX_TOTAL_EXECUTIONS) {
+          executionState.budgetExhausted = true;
+          executionState.workerRunning = false;
+          executionState.current = null;
+          executionState.queue = [];
+          executionState.queueIndex.clear();
+          executionState.queueLog.unshift({
+            task: "(budget)",
+            agent: "system",
+            status: "failed",
+            error: `Globální budget vyčerpán (${LIMITS.MAX_TOTAL_EXECUTIONS} exekucí). Resetujte stav exekuce.`,
+            category: "budget",
+            retryable: true,
+            at: new Date().toISOString(),
+          });
+          console.warn(`[Executor] (queue) Globální budget vyčerpán — worker zastaven, fronta vyprázdněna. Resetujte stav.`);
+          return;
+        }
+        // Cooldown = TRANSIENTNÍ stav → počkej a zkus znovu
         setTimeout(pump, LIMITS.COOLDOWN_MS);
         return;
       }
@@ -700,6 +724,7 @@ function getQueueState() {
     log: executionState.queueLog,
     workerRunning: executionState.workerRunning,
     paused: executionState.paused,
+    budgetExhausted: executionState.budgetExhausted,
     pausedProcesses: getPausedProcesses(),
   };
 }
