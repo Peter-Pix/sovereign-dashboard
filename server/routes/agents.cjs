@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { asyncHandler, HttpError, logError } = require("../lib/logger.cjs");
 const rateLimiter = require("../lib/rateLimiter.cjs");
+const { stripAnsi } = require("../lib/streamUtils.cjs");
 
 module.exports = function registerAgents(app, deps) {
   const { config, requireAuth, AGENT_TASKS, runAgentExe, runAgentStream, isSafeName, rateLimitMiddleware } = deps;
