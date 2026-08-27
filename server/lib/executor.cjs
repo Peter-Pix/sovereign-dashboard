@@ -93,6 +93,10 @@ function isProjectSkipped(projectName) {
 // Všechna klíčová slova jsou normalizovaná (lowercase, bez diakritiky) pro konzistentní matching (viz Bug F)
 const AGENT_ROUTING = [
   {
+    agent: "builder",
+    keywords: ["bootstrap", "next.js", "nextjs", "typescript", "postgresql", "prisma", "drizzle", "tailwind", "shadcn", "zod", "playwright", "vitest", "jest", "datovy model", "db schema", "schema", "api", "endpoint", "implementovat", "vytvorit", "auth", "authentication", "payment", "platba", "webhook", "ledger", "contribution", "pokladna", "pot", "reminder", "notifikace", "sharing", "admin", "analytics", "landing", "homepage", "dashboard", "build", "kod", "code", "komponent", "component", "ui", "ux", "design", "og image", "opengraph", "seo", "monetizace", "pricing", "gdpr", "security", "test", "e2e", "ci/cd", "deploy", "staging", "production", "monitoring", "beta", "launch", "landing page"],
+  },
+  {
     agent: "archivist",
     keywords: ["audit", "dokument", "readme", "refactor", "fix", "oprav", "kod", "code", "cleanup", "uklid", "test", "bug", "prepsat", "doplnit", "vylepsit"],
   },
@@ -106,7 +110,6 @@ const AGENT_ROUTING = [
   },
   {
     agent: "spine",
-    // Normalizovaná slova (bez diakritiky): overit, prehled, kontrola, ...
     keywords: ["status", "check", "verify", "kontrol", "prehled", "report", "monitor", "system", "log", "sync", "csv", "db", "sqlite", "spustit", "otevrit", "bezi", "cte"],
   },
 ];
