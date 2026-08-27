@@ -70,12 +70,18 @@ test("E2E [A]: 3 projekty × 1 task → 3 paralelní sloty (3/3), dokončení �
     executor.startQueueWorker();
 
     // Všechy 3 sloty se naplní paralelně (3 různé projekty).
+    // Čteme stav ATOMICALLY uvnitř waitFor — mezi waitFor a čtením s3 by se
+    // sloty mohly uvolnit (tasky dokončí), což dělalo test flaky.
+    let s3 = null;
     const filled = await waitFor(() => {
       const s = executor.getQueueState();
-      return s.active.length === 3 && s.slots.used === 3;
-    }, 10000);
+      if (s.active.length === 3 && s.slots.used === 3) {
+        s3 = s; // zachyť stav v momentě, kdy je plný
+        return true;
+      }
+      return false;
+    }, 30000);
     assert.ok(filled, "3 projekty měly běžet paralelně (3/3 sloty)");
-    const s3 = executor.getQueueState();
     assert.strictEqual(s3.slots.used, 3);
     assert.strictEqual(s3.slots.total, 3);
     // 3 RŮZNÉ projekty → žádný se nepočítá do MAX_PER_PROJECT
@@ -86,7 +92,7 @@ test("E2E [A]: 3 projekty × 1 task → 3 paralelní sloty (3/3), dokončení �
     const drained = await waitFor(() => {
       const s = executor.getQueueState();
       return s.active.length === 0 && s.queueLength === 0;
-    }, 20000);
+    }, 60000);
     assert.ok(drained, "všechny tasky dokončeny a sloty uvolněny");
     assert.strictEqual(executor.getQueueState().workerRunning, false);
   } finally {
