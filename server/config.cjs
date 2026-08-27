@@ -37,11 +37,26 @@ module.exports = {
   MAX_NAME_LEN: 128,
 
   EXEC_AGENT: process.env.SOVEREIGN_EXEC_AGENT || "main",
-  // Max souběžných exekucí v queue workeru (paralelní pool)
-  // Max souběžných exekucí. Default 1 — na 8GB mašině je 3 paralelních
-  // `openclaw agent` subprocesů + gateway (~750MB) = OOM kill (Killed: 9).
-  // Přepínatelné přes EXEC_CONCURRENCY v .env.
-  EXEC_CONCURRENCY: Number(process.env.EXEC_CONCURRENCY) || 1,
+  // Max souběžných exekucí v queue workeru (paralelní pool).
+  // Default 3 sloty. Na 8GB mašině je 3 paralelních `openclaw agent`
+  // subprocesů + gateway (~750MB) = OOM kill (Killed: 9), proto je pool
+  // chráněn MEMORY GUARDem (viz executor.cjs) — dynamicky omezí počet
+  // skutečně běžících agentů podle volné RAM. Přepínatelné přes
+  // EXEC_CONCURRENCY v .env.
+  EXEC_CONCURRENCY: Number(process.env.EXEC_CONCURRENCY) || 3,
+
+  // ── Memory guard (ochrana proti OOM na 8GB mašině) ──
+  // Pool může mít 3 sloty, ale reálně spustí jen tolik agentů, kolik
+  // dovolí volná paměť. Každý `openclaw agent` subproces ~250MB.
+  // EXEC_MEMORY_GUARD=1  → guard aktivní (default)
+  // EXEC_MEMORY_GUARD=0  → guard vypnutý (plný pool, risk OOM)
+  // EXEC_MIN_FREE_MB     → minimální volná RAM, pod kterou se nespouští
+  //                        další agent (default 1500MB headroom).
+  EXEC_MEMORY_GUARD: process.env.EXEC_MEMORY_GUARD !== "0",
+  EXEC_MIN_FREE_MB: Number(process.env.EXEC_MIN_FREE_MB) || 1500,
+  // Odhad paměti na jeden `openclaw agent` subproces (pro výpočet, kolik
+  // slotů se vejde do volné RAM). Přepínatelné přes EXEC_AGENT_MEM_MB.
+  EXEC_AGENT_MEM_MB: Number(process.env.EXEC_AGENT_MEM_MB) || 250,
 
   // Výchozí hodnoty — runtime přepisuje přes modelStore
   DEFAULT_EXEC_MODEL,

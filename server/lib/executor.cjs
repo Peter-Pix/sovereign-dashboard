@@ -571,6 +571,52 @@ function canRunNow(item, active) {
   return true;
 }
 
+// ===== Memory guard (ochrana proti OOM na 8GB mašině) =====
+// Pool může mít MAX_CONCURRENT slotů, ale reálně spustí jen tolik agentů,
+// kolik dovolí volná RAM. Každý `openclaw agent` subproces ~250MB; gateway
+// ~750MB. Bez guardu = 3 paralelní agenty + gateway = OOM kill (Killed: 9).
+// Guard je soft-limit: když je RAM málo, nespustí další agenta, ale fronta
+// čeká (neblokuje sloty). Vypne se přes EXEC_MEMORY_GUARD=0.
+function memoryGuardLimit() {
+  if (!config.EXEC_MEMORY_GUARD) return LIMITS.MAX_CONCURRENT; // guard vypnutý
+  try {
+    const os = require("os");
+    const minFree = config.EXEC_MIN_FREE_MB * 1024 * 1024;
+    const perAgent = config.EXEC_AGENT_MEM_MB * 1024 * 1024;
+    // "Available" RAM na macOS ≠ os.freemem() (to je jen UNUSED, typicky
+    // ~200MB i když je mašina v pohodě). macOS drží paměť v compressoru a
+    // inactive pages, které jsou reclaimable. Počítáme je z vm_stat:
+    //   available = free + inactive + speculative (vše reclaimable).
+    // Fallback na os.freemem(), když vm_stat není dostupný (Linux/Windows).
+    let availBytes = os.freemem();
+    try {
+      const { execFileSync } = require("child_process");
+      const out = execFileSync("vm_stat", { encoding: "utf8", timeout: 2000 });
+      const pageSize = /page size of (\d+) bytes/.exec(out)?.[1]
+        ? Number(/page size of (\d+) bytes/.exec(out)[1])
+        : 16384;
+      const num = (label) => {
+        const m = new RegExp(label + ":\\s+(\\d+)\\.").exec(out);
+        return m ? Number(m[1]) : 0;
+      };
+      const free = num("Pages free");
+      const inactive = num("Pages inactive");
+      const speculative = num("Pages speculative");
+      availBytes = (free + inactive + speculative) * pageSize;
+    } catch { /* vm_stat nedostupný → zůstává os.freemem() */ }
+
+    // Kolik agentů se vejde do available RAM (s rezervou minFree).
+    const byMem = Math.max(0, Math.floor((availBytes - minFree) / perAgent));
+    const limit = Math.min(LIMITS.MAX_CONCURRENT, byMem);
+    if (limit < LIMITS.MAX_CONCURRENT) {
+      console.warn(`[Executor] Memory guard: available RAM ${Math.round(availBytes/1024/1024)}MB → spouštím max ${limit}/${LIMITS.MAX_CONCURRENT} agentů (minFree ${config.EXEC_MIN_FREE_MB}MB, ~${config.EXEC_AGENT_MEM_MB}MB/agent).`);
+    }
+    return limit;
+  } catch {
+    return LIMITS.MAX_CONCURRENT; // guard selhal → neomezovat (fail-open)
+  }
+}
+
 function startQueueWorker() {
   // Phase 1: paralelní pool — až MAX_CONCURRENT souběžných exekucí.
   // queue je sdílená, tasky se berou FIFO, ale běží paralelně (až 3 najednou).
@@ -588,7 +634,7 @@ function startQueueWorker() {
     // Adaptivní: vybere task, který MŮŽE běžet (nekonkuruje na projekt/fázi,
     // není pozastavený). Závislé tasky zůstanou ve frontě — nespustí se
     // paralelně s předchůdcem, ale neblokují slot.
-    while (executionState.active.length < LIMITS.MAX_CONCURRENT && executionState.queue.length > 0) {
+    while (executionState.active.length < memoryGuardLimit() && executionState.queue.length > 0) {
       const check = canExecute();
       if (!check.ok) {
         // Budget vyčerpán = PERMANENTNÍ stav (ne cooldown). Worker se zastaví

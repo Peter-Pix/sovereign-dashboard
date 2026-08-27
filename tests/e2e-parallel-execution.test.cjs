@@ -23,6 +23,7 @@ const path = require("path");
 // ── Musí být nastaveno PŘED require executor.cjs ──
 // Výchozí hodnoty — testy je mohou přepsat lokálně
 process.env.EXEC_CONCURRENCY = "3";           // 3 sloty
+process.env.EXEC_MEMORY_GUARD = "0";          // guard vypnutý — testuje pool mechaniku, ne paměť
 process.env.EXECUTOR_MOCK_AGENT = "1";        // mock agenta (žádný cloud)
 // EXECUTOR_MOCK_DELAY_MS bude nastaveno v jednotlivých testech
 
