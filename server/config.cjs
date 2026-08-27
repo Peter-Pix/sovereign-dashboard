@@ -38,7 +38,10 @@ module.exports = {
 
   EXEC_AGENT: process.env.SOVEREIGN_EXEC_AGENT || "main",
   // Max souběžných exekucí v queue workeru (paralelní pool)
-  EXEC_CONCURRENCY: Number(process.env.EXEC_CONCURRENCY) || 3,
+  // Max souběžných exekucí. Default 1 — na 8GB mašině je 3 paralelních
+  // `openclaw agent` subprocesů + gateway (~750MB) = OOM kill (Killed: 9).
+  // Přepínatelné přes EXEC_CONCURRENCY v .env.
+  EXEC_CONCURRENCY: Number(process.env.EXEC_CONCURRENCY) || 1,
 
   // Výchozí hodnoty — runtime přepisuje přes modelStore
   DEFAULT_EXEC_MODEL,
