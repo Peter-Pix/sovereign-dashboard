@@ -42,7 +42,7 @@ const { rateLimitGlobal } = rateLimitMiddleware;
 const { isSafeName, listProjectDirs, getProjectInfo, getProjectsCached, SKIP_DIRS, collectProjectData, summarizeProjects } = require("./lib/projects.cjs");
 const { collectSystemData } = require("./lib/system.cjs");
 const { buildPaparazziPrompt, callOllama, gatherAllData, PAPARAZZI_REPORT_DIR, PAPARAZZI_REPORT_FILE, PAPARAZZI_HISTORY_FILE } = require("./lib/paparazzi.cjs");
-const { AGENT_TASKS, runAgentExe, runAgentStream } = require("./lib/agents.cjs");
+const { AGENT_TASKS, runAgentExe, runAgentStream, execOpenclawWithRetry, isTransientSqliteLock } = require("./lib/agents.cjs");
 const { collectRoadmaps } = require("./lib/roadmaps.cjs");
 const { buildRoadmapState } = require("./lib/roadmapState.cjs");
 const { findNextTask, markTaskDone, runTaskAgent, routeTaskToAgent, executeOneTask, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, pauseProcess, resumeProcess, pauseProject, getExecutionState, resetExecutionState } = require("./lib/executor.cjs");
@@ -95,7 +95,7 @@ function requireAuth(req, res, next) {
 }
 
 // ===== Sdílené dependency pro routes =====
-const deps = { config, requireAuth, logger, modelStore, mcpManager, rateLimitMiddleware, alerts, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, getProjectsCached, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe, runAgentStream, collectRoadmaps, findNextTask, markTaskDone, runTaskAgent, routeTaskToAgent, executeOneTask, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, pauseProcess, resumeProcess, pauseProject, getExecutionState, resetExecutionState, buildRoadmapState };
+const deps = { config, requireAuth, logger, modelStore, mcpManager, rateLimitMiddleware, alerts, isSafeName, listProjectDirs, getProjectInfo, SKIP_DIRS, collectProjectData, summarizeProjects, getProjectsCached, collectSystemData, gatherAllData, buildPaparazziPrompt, callOllama, AGENT_TASKS, runAgentExe, runAgentStream, execOpenclawWithRetry, isTransientSqliteLock, collectRoadmaps, findNextTask, markTaskDone, runTaskAgent, routeTaskToAgent, executeOneTask, enqueueProjectTasks, startQueueWorker, getQueueState, pauseQueue, resumeQueue, pauseProcess, resumeProcess, pauseProject, getExecutionState, resetExecutionState, buildRoadmapState };
 
 // ===== Registrace routes =====
 require("./routes/projects.cjs")(app, deps);

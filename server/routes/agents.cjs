@@ -6,7 +6,7 @@ const rateLimiter = require("../lib/rateLimiter.cjs");
 const { stripAnsi } = require("../lib/streamUtils.cjs");
 
 module.exports = function registerAgents(app, deps) {
-  const { config, requireAuth, AGENT_TASKS, runAgentExe, runAgentStream, isSafeName, rateLimitMiddleware } = deps;
+  const { config, requireAuth, AGENT_TASKS, runAgentExe, runAgentStream, execOpenclawWithRetry, isTransientSqliteLock, isSafeName, rateLimitMiddleware } = deps;
 
   app.get("/api/agents", asyncHandler(async (req, res) => {
     const agentsDir = path.join(config.SOVEREIGN_DIR, "workspaces");
@@ -261,23 +261,18 @@ Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
     const jobKey = `${agent}:${name}`;
 
     try {
-      const { execFile } = require("child_process");
       const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", projectPrompt];
 
-      const { stdout, stderr } = await new Promise((resolve, reject) => {
-        execFile("openclaw", args, {
-          timeout: 300000,
-          maxBuffer: 10 * 1024 * 1024,
-          killSignal: "SIGKILL",
-          env: { ...process.env, FORCE_COLOR: "0" },
-        }, (err, stdout, stderr) => {
-          if (err) {
-            const snippet = (stderr || "").slice(0, 500);
-            return reject(new Error(`${err.message}${snippet ? ` — ${snippet}` : ""}`));
-          }
-          resolve({ stdout, stderr });
-        });
-      });
+      const retry = await execOpenclawWithRetry(args, { timeoutMs: 300000, attempts: 3, baseDelayMs: 2000 });
+      if (retry.error) {
+        const last = retry.error;
+        const snippet = (last._stderr || "").slice(0, 500);
+        const msg = `${last.message}${snippet ? ` — ${snippet}` : ""}`;
+        releaseJob(jobKey);
+        logError({ err: last, req, extra: { source: "run-agent", agent, project: name, task: task || "generic", retried: true } });
+        throw new HttpError(500, `Exekuce selhala: ${msg}`, { expose: false });
+      }
+      const { stdout, stderr } = retry;
       releaseJob(jobKey);
 
       try {

@@ -163,18 +163,20 @@ function runAgentExe(agentName, callback) {
   }, 300000);
 
   const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", task.prompt];
-  execFile("openclaw", args, {
-    timeout: 300000,
-    maxBuffer: 10 * 1024 * 1024,
-    killSignal: "SIGKILL",
-  }, (err, stdout, stderr) => {
+
+  // Retry na transientní SQLite lock (gateway zrovna zapisuje). Nečekáme
+  // na 5-min timeout — zkusíme párkrát s krátkým backoffem a pak failneme.
+  execOpenclawWithRetry(args, { timeoutMs: 300000, attempts: 3, baseDelayMs: 2000 }).then((res) => {
     if (finished) return;
     finished = true;
     clearTimeout(timeout);
-    if (err) {
-      console.error(`[Agent ${agentName}] Exekuce selhala: ${err.message}`);
-      return callback(new Error(`Exekuce selhala: ${err.message} — ${stderr.slice(0, 300)}`));
+    if (res.error) {
+      const e = res.error;
+      const snippet = (e._stderr || "").slice(0, 300);
+      console.error(`[Agent ${agentName}] Exekuce selhala: ${e.message}`);
+      return callback(new Error(`Exekuce selhala: ${e.message}${snippet ? " — " + snippet.slice(0, 300) : ""}`));
     }
+    const { stdout } = res;
     try {
       const data = JSON.parse(stdout);
       const payloads = data.result?.payloads || [];
@@ -184,6 +186,12 @@ function runAgentExe(agentName, callback) {
     } catch {
       callback(null, { text: stdout.slice(0, 1000), tokens: 0, agent: task.name });
     }
+  }).catch((err) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timeout);
+    console.error(`[Agent ${agentName}] Retry selhala: ${err.message}`);
+    callback(new Error(`Exekuce selhala: ${err.message}`));
   });
 }
 
@@ -313,4 +321,50 @@ ${task.prompt}`
   };
 }
 
-module.exports = { AGENT_TASKS, runAgentExe, runAgentStream };
+
+// ---------------------------------------------------------------------------
+// Retry na transientní SQLite lock chybu (gateway zapisuje do state store).
+// OpenClaw má tvrdý SQLite busy_timeout 5s — když gateway právě zapisuje
+// (běžící tasky/session), externí `openclaw agent` dostane
+// "database is locked" / "transaction lock wait failed". To je DOČASNÉ —
+// jakmile gateway zápis dokončí, lock se uvolní. Místo okamžitého 500
+// zkusíme párkrát znovu s krátkým backoffem.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const isTransientSqliteLock = (msg) => {
+  if (!msg) return false;
+  return /database is locked|transaction lock wait failed|SQLITE_BUSY|lock wait/i.test(msg);
+};
+
+async function execOpenclawWithRetry(args, { timeoutMs = 300000, attempts = 3, baseDelayMs = 2000 } = {}) {
+  const { execFile } = require("child_process");
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const { stdout, stderr } = await new Promise((resolve, reject) => {
+        execFile("openclaw", args, {
+          timeout: timeoutMs,
+          maxBuffer: 10 * 1024 * 1024,
+          killSignal: "SIGKILL",
+          env: { ...process.env, FORCE_COLOR: "0" },
+        }, (err, stdout, stderr) => {
+          if (err) return reject(Object.assign(err, { _stderr: stderr || "" }));
+          resolve({ stdout, stderr });
+        });
+      });
+      return { stdout, stderr };
+    } catch (err) {
+      lastErr = err;
+      const msg = `${err.message} ${err._stderr || ""}`;
+      if (!isTransientSqliteLock(msg)) return { error: err }; // netranzitivní → vrať hned
+      if (i < attempts - 1) {
+        console.warn(`[Agent] SQLite lock (pokus ${i + 1}/${attempts}), retry za ${baseDelayMs}ms`);
+        await sleep(baseDelayMs * (i + 1)); // 2s, 4s, 6s
+      }
+    }
+  }
+  return { error: lastErr };
+}
+
+module.exports = { AGENT_TASKS, runAgentExe, runAgentStream, execOpenclawWithRetry, isTransientSqliteLock, sleep };
+
+
