@@ -256,7 +256,7 @@ Aby se zabránilo paralelní práci na stejných souborech, dashboard má dva li
 
 **Důsledek:** Tasky z jednoho projektu běží **sériově** (konkurují si na souborech). Tasky z **různých** projektů mohou běžet paralelně.
 
-> ⚠️ **Důležité:** run-all na JEDNOM projektu s ≥3 tasky **NEJDE do 3/3** — tasky z jednoho projektu běží sériově (`MAX_PER_PROJECT=1`). Slots 2/3 max (1/projekt), nikdy 3 z jednoho projektu. To je **záměrné**, ne chyba.
+> ⚠️ **Důležité:** Exekuce více tasků z JEDNOHO projektu **NEJDĚ do 3/3 slotů** — tasky z jednoho projektu běží sériově (`MAX_PER_PROJECT=1`, konkurují si na souborech). Slots 2/3 max (1/projekt), nikdy 3 z jednoho projektu. To je **záměrné**, ne chyba.
 
 ### Paměťový guard (ochrana proti OOM)
 
@@ -276,7 +276,7 @@ Executor má 4 vrstvy ochrany proti zacyklení:
 
 | Limit | Hodnota | Popis |
 |-------|---------|-------|
-| `MAX_TASKS_PER_RUN` | 5 | Max tasků v jednom `run-all` |
+| `MAX_TASKS_PER_RUN` | 5 | Max tasků v jedné dávkové exekuci projektu |
 | `MAX_RETRIES_PER_TASK` | 1 | Max pokusů na jeden task |
 | `MAX_TOTAL_EXECUTIONS` | 20 | Globální budget za session |
 | `COOLDOWN_MS` | 2000 | Min interval mezi exekucemi |
@@ -297,8 +297,10 @@ Tasky, které se nepodaří odškrtnout, se označí jako **"stuck"** a přesko�
 curl -X POST "http://localhost:8891/api/executor/run/:project" \
   -H "x-auth-token: $SOVEREIGN_AUTH_TOKEN"
 
-# Spustit všechny tasky (sekvenčně, max 5)
-curl -X POST "http://localhost:8891/api/executor/run-all/:project" \
+# Pozastavit frontu (pause/resume)
+curl -X POST "http://localhost:8891/api/executor/queue/pause" \
+  -H "x-auth-token: $SOVEREIGN_AUTH_TOKEN"
+curl -X POST "http://localhost:8891/api/executor/queue/resume" \
   -H "x-auth-token: $SOVEREIGN_AUTH_TOKEN"
 
 # Reset exekučního stavu (nová session)
@@ -354,12 +356,22 @@ Roadmapa je `ROADMAP.md` (nebo `PLAN.md`) v kořenové složce projektu. Jednodu
 
 ### Jak agenti fungují
 
-Agenti jsou definovaní v `AGENTS.md` v každém projektu. Každý agent má:
-- **Jméno** (např. `The Builder`, `Strateg`, `SecurityCop`)
-- **Role** (co má dělat)
-- **Prompt** (instrukce pro LLM)
-- **Max pokusů** (kolikrát může task zkusit při selhání)
-- **Model** (jaký LLM používá)
+Agenti jsou definovaní v **`server/lib/agents.cjs`** ve struktuře `AGENT_TASKS` (ne v `AGENTS.md` — ten je projektový soubor s pravidly, který agent čte jako kontext). Každý agent má:
+- **Jméno** (např. `The Builder`, `The Strategist`, `The Scout`)
+- **Workspace** (adresář pro jeho výstupy pod `sovereign-os/workspaces/`)
+- **Prompt** (instrukce, co má dělat)
+
+**Skuteční agenti v dashboardu:**
+
+| Agent | Display name | Zaměření |
+|-------|--------------|----------|
+| `builder` | The Builder | Stavění aplikací task po tasku z `ROADMAP.md` |
+| `archivist` | The Archivist | Dokumentace a audit projektů |
+| `scout` | The Scout | Hledání leadů a příležitostí |
+| `strategist` | The Strategist | Pitche, strategie, marketing |
+| `spine` | The Spine | Kontrola stavu, status reporty, Merge Master |
+
+**Routing tasků na agenty** probíhá přes klíčová slova (`AGENT_ROUTING` v `executor.cjs`). Např. task se slovy "schema", "api", "implementovat" → `builder`; "audit", "readme" → `archivist`; "pitch", "marketing" → `strategist`. Pokud nic nesedí, spadne na `archivist`.
 
 ### SSE streamy — reálný výstup
 
@@ -514,10 +526,10 @@ ps aux --sort=-%mem | grep -E "(node|openclaw|Google)" | head -10
 
 # Detailní vm_stat pro výpočet dostupné RAM
 vm_stat | awk '
-/page size/ {psize=$4}
-/Pages free/ {free=$3}
-/Pages inactive/ {inactive=$3}
-/Pages speculative/ {speculative=$3}
+/bytes/ { for (i=1; i<=NF; i++) if ($i ~ /^[0-9]+$/) { psize=$i+0; break } }
+/^Pages free:/ { gsub(/\./,"",$3); free=$3+0 }
+/^Pages inactive:/ { gsub(/\./,"",$3); inactive=$3+0 }
+/^Pages speculative:/ { gsub(/\./,"",$3); speculative=$3+0 }
 END {
   avail = (free + inactive + speculative) * psize;
   printf "Available RAM: %.0f MB\n", avail/1024/1024;
@@ -602,8 +614,14 @@ Bez tokenu vrací `401 Unauthorized`.
 |--------|------|-------|
 | GET | `/api/executor/next/:project` | Další nehotový task v roadmapě |
 | GET | `/api/executor/state` | Stav exekuce (monitoring) |
+| GET | `/api/executor/queue` | Stav fronty (délka, aktivní tasky, log) |
+| POST | `/api/executor/queue/:project` 🔒 | Zařadit tasky projektu do fronty |
+| POST | `/api/executor/queue/pause` 🔒 | Pozastavit frontu exekuce |
+| POST | `/api/executor/queue/resume` 🔒 | Obnovit frontu exekuce |
+| POST | `/api/executor/process/pause` 🔒 | Pozastavit jeden task/agenta |
+| POST | `/api/executor/process/resume` 🔒 | Obnovit pozastavený task |
+| POST | `/api/executor/project/pause` 🔒 | Pozastavit tasky projektu |
 | POST | `/api/executor/run/:project` 🔒 | Spustí dokončení jednoho tasku |
-| POST | `/api/executor/run-all/:project` 🔒 | Spustí dokončení všech tasků (max 5) |
 | POST | `/api/executor/reset` 🔒 | Resetuje exekuční stav |
 
 ### Chybové kódy
@@ -642,11 +660,11 @@ Bez tokenu vrací `401 Unauthorized`.
 
 **Cíl:** Strukturovaně přidat novou funkci s minimálním rizikem regrese.
 
-1. **Analýza:** `## Fáze: Analýza` → `- [ ] Pochopit požadavek a navrhnout řešení` → agent `Strateg`
-2. **Implementace:** `## Fáze: Implementace` → `- [ ] Implementovat core funkci X` → agent `The Builder`
-3. **Testování:** `## Fáze: Testování` → `- [ ] Napsat a spustit testy pro X` → agent `Tester`
-4. **Dokumentace:** `## Fáze: Dokumentace` → `- [ ] Aktualizovat README` → agent `Documentarian`
-5. **Kontrola:** `## Fáze: Kontrola` → `- [ ] Spustit linting, build, integrační testy`
+1. **Analýza:** `## Fáze: Analýza` → `- [ ] Pochopit požadavek a navrhnout řešení` → agent `archivist` (audit) nebo `strategist` (strategie)
+2. **Implementace:** `## Fáze: Implementace` → `- [ ] Implementovat core funkci X` → agent `builder`
+3. **Testování:** `## Fáze: Testování` → `- [ ] Napsat a spustit testy pro X` → agent `builder` (testy routují na buildera)
+4. **Dokumentace:** `## Fáze: Dokumentace` → `- [ ] Aktualizovat README` → agent `archivist`
+5. **Kontrola:** `## Fáze: Kontrola` → `- [ ] Spustit linting, build, integrační testy` → agent `builder`
 
 ### Workflow 3: Řešení technického dluhu
 
@@ -656,8 +674,8 @@ Bez tokenu vrací `401 Unauthorized`.
 
 ### Workflow 4: Experimentování s novými technologiemi
 
-1. **Prozkoumání:** `- [ ] Prozkoumat knihovnu X a vhodnost pro Y` → agent `Researcher`
-2. **PoC:** `- [ ] Vytvořit minimalní PoC pro integraci X do Y` → agent `The Builder`
+1. **Prozkoumání:** `- [ ] Prozkoumat knihovnu X a vhodnost pro Y` → agent `archivist` (audit/rešerše)
+2. **PoC:** `- [ ] Vytvořit minimalní PoC pro integraci X do Y` → agent `builder`
 3. **Rozhodnutí:** Na základě PoC a analýzy rozhodni, zda pokračovat
 
 ### Workflow 5: Noční automatizace přes cron
@@ -695,7 +713,7 @@ echo "Fronta je prázdná!"
 ### Tip 4: Model switching pro různé typy tasků
 - **Rychlé úkoly** (analýza, dokumentace): `ollama/deepseek-v4-flash:cloud`
 - **Komplexní úkoly** (refaktor, algoritmy): `ollama/minimax-m3:cloud`
-- **Kreativní úkoly** (psaní, brainstorming): `ollama/nemotron-3-super:cloud`
+- **Kreativní úkoly** (psaní, brainstorming): `ollama/kimi-k2.7-code:cloud`
 
 ### Tip 5: Command Palette (Cmd+K)
 Dashboard má **Command Palette** — vyhledávání a spouštění akcí přes `Cmd+K`. Rychlý přístup k projektům, agentům a akcím.
@@ -761,17 +779,26 @@ curl -X POST "http://localhost:8891/api/executor/reset" \
 
 ### Jak přidat vlastního agenta
 
-1. Vytvoř `AGENTS.md` v kořenové složce projektu
-2. Přidej definici agenta:
-   ```markdown
-   ## The Analyst
-   **Role**: Analytik dat a trendů
-   **Prompt**: Jsi zkušený datový analytik. Tvoje úkoly zahrnují: analýzu dat, identifikaci trendů, návrh vizualizací a interpretaci výsledků. Vždy používej daty podložené argumenty.
-   **Max pokusů**: 2
-   **Model**: ollama/nemotron-3-super:cloud
+> ⚠️ **Agenti se nedefinují v `AGENTS.md` projektu.** Jsou hardcoded v kódu dashboardu. Přidání nového agenta vyžaduje úpravu kódu + restart serveru.
+
+**Přidání nového agenta do `AGENT_TASKS`** (v `server/lib/agents.cjs`):
+1. Otevři `server/lib/agents.cjs` → struktura `AGENT_TASKS`
+2. Přidej nový záznam, např.:
+   ```js
+   analyst: {
+     name: "The Analyst",
+     workspace: "analyst",
+     prompt: `Jsi The Analyst — Sovereign OS. Tvoje role: analýza dat a trendů. ...`,
+   },
    ```
-3. Commitni změny
-4. Otevři detail projektu — uvidíš nového agenta v seznamu
+3. Přidej routing do `AGENT_ROUTING` (v `server/lib/executor.cjs`), aby se tasky routovaly na nového agenta:
+   ```js
+   { agent: "analyst", keywords: ["analyz", "trend", "data", "pruzkum"] },
+   ```
+4. Restartuj server (`./scripts/stop.sh && ./scripts/start.sh`)
+5. Nový agent je dostupný v exekuci a UI
+
+**Projektové `AGENTS.md`** slouží k jinému účelu — je to soubor s pravidly a kontextem pro agenta (Builder ho čte: „Přečti ROADMAP.md a AGENTS.md — pochop stack, strukturu a pravidla"). Můžeš ho upravit, aby agent dodržoval tvé konvence, ale **nevytváří nové agenty**.
 
 ### Jak přidat vlastní tool pro agenty
 
@@ -797,7 +824,7 @@ Lokální modely nad ~3GB vyžadují obrovskou RAM. Na 8GB mašině → okamžit
 ### Jak snížit náklady na LLM?
 1. Zkrať prompty
 2. Zvyš využití kontextu (jen relevantní soubory)
-3. Omež počty pokusů na 1 pro jednoduché tasky
+3. Omeň počty pokusů na 1 pro jednoduché tasky
 4. Používej levnější modely (deepseek místo minimax)
 5. Využij cache pro opakované tasky
 
