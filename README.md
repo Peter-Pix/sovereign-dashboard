@@ -164,6 +164,8 @@ sovereign-dashboard/
     ├── error-states.spec.mjs        # UI: chybové stavy a fallbacky
     ├── paparazzi-api.spec.mjs       # Paparazzi API endpointy
     └── roadmaps-executor.spec.mjs   # UI/API: roadmapy, autonomní exekuce, sloty, tlačítka
+planner/                   # Roadmap Planner — vzor pro plánovací pipeline
+    └── README.md           # Workflow: Archivist (audit) → Strategist (plán) → Builder (exekuce)
 ```
 
 ## Testy
@@ -207,6 +209,7 @@ npx playwright test agent-execution  # jen jeden e2e soubor
 - **Paměťový guard** — dynamicky omezí počet běžících agentů podle volné RAM (prevence OOM na 8GB mašině), přepínatelný přes `EXEC_MEMORY_GUARD`
 - **Optimistické UI** — bugy se přidávají instantně
 - **Action Center** — spuštění agenta + VS Code deep link přímo z karty projektu
+- **Roadmap Planner** — Archivist + Strategist spolupracují na strategickém plánování: rozdělí cíl na malé atomické tasky (~5 min), které Builder čte a odškrtává
 
 ## Dokumentace
 

@@ -273,6 +273,63 @@ curl -X POST "http://localhost:8891/api/executor/reset" \
 
 ---
 
+## 🧠 Roadmap Planner — strategické plánování (Archivist + Strategist)
+
+> **Novinka:** Archivist a Strategist spolupracují na **strategickém plánování roadmapy**. Rozdělí velký cíl na malé atomické tasky (~5 min), které pak Builder čte a odškrtává.
+
+### Workflow (2 fáze + exekuce)
+
+```
+Archivist (audit) → Strategist (plán) → Builder (exekuce)
+```
+
+### Fáze 1: Archivist — strategický audit
+
+Archivist projde projekt a zjistí **faktický stav** (bez plánování, jen data):
+- Co je hotové (funkce, které fungují)
+- Co chybí / je rozbité (neimplementované, chyby)
+- Technický dluh (TODO, FIXME, hardcoded, zastaralé)
+- Rizika a pozorování (bezpečnost, chybějící testy, špatná dokumentace)
+
+Zapíše do `<projekt>/planner/state.md` ve strukturovaném formátu.
+
+### Fáze 2: Strategist — strategické plánování
+
+Strategist přečte `state.md` od Archivista a navrhne roadmapu:
+- **Malé atomické tasky** (~5 min práce agenta)
+- Každý task je krátký, jednoduchý, detailně popsaný až k cíli
+- Strategicky: co je nejdůležitější pro byznys? Co odemkne další práci?
+- Marketingově chytře: co zlepší vnímání projektu (landing, OG, SEO)?
+
+Zapíše do `<projekt>/ROADMAP.md` ve standardním formátu.
+
+### Fáze 3: Builder — exekuce
+
+Builder čte `ROADMAP.md`, bere tasky po jednom, dělá je a odškrtává `[x]`.
+
+### Jak spustit
+
+Planner režim se spouští přes task s klíčovými slovy:
+- **"planner audit"** → Archivist (zapíše `state.md`)
+- **"planner roadmap"** → Strategist (zapíše `ROADMAP.md`)
+
+Přes API:
+```bash
+# Spustit audit (Archivist)
+curl -X POST "http://localhost:8891/api/executor/run/:project" \
+  -H "x-auth-token: $TOKEN" \
+  -d '{"task": "planner audit pro projekt X"}'
+
+# Spustit plánování (Strategist)
+curl -X POST "http://localhost:8891/api/executor/run/:project" \
+  -H "x-auth-token: $TOKEN" \
+  -d '{"task": "planner roadmap pro projekt X"}'
+```
+
+> 💡 **Tip:** Spusť nejdřív "planner audit" (Archivist), pak "planner roadmap" (Strategist). Strategist potřebuje `state.md` od Archivista jako vstup.
+
+---
+
 ## 🗺️ Roadmapy — plánování a sledování
 
 ### Struktura roadmapy

@@ -98,7 +98,7 @@ const AGENT_ROUTING = [
   },
   {
     agent: "archivist",
-    keywords: ["audit", "dokument", "readme", "refactor", "fix", "oprav", "kod", "code", "cleanup", "uklid", "test", "bug", "prepsat", "doplnit", "vylepsit"],
+    keywords: ["audit", "dokument", "readme", "refactor", "fix", "oprav", "kod", "code", "cleanup", "uklid", "test", "bug", "prepsat", "doplnit", "vylepsit", "planner audit", "strategicky audit", "stav projektu", "zmapuj stav", "zjisti stav"],
   },
   {
     agent: "scout",
@@ -106,7 +106,7 @@ const AGENT_ROUTING = [
   },
   {
     agent: "strategist",
-    keywords: ["pitch", "strateg", "plan", "marketing", "brand", "position", "gtm", "launch", "byznys", "cena", "klient"],
+    keywords: ["pitch", "strateg", "plan", "marketing", "brand", "position", "gtm", "launch", "byznys", "cena", "klient", "planner roadmap", "navrhni roadmapu", "rozdel na tasky", "atomicke tasky", "strategicke planovani"],
   },
   {
     agent: "spine",
