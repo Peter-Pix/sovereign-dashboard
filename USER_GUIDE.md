@@ -828,7 +828,7 @@ Sovereign Dashboard je výkonný nástroj, ale jeho síla je v **kombinaci autom
 1. **Začni malým** — jeden projekt, jednoduché roadmapy
 2. **Iteruj** — sleduj, co funguje, co ne, přizpůsobuj
 3. **Automatizuj rutinu** — nech agenty dělat opakující se, dobře definované úkoly
-4. **Shraň si kreativní úkoly pro sebe** — strategie, design, rozhodování
+4. **Nech si kreativní úkoly pro sebe** — strategie, design, rozhodování
 5. **Kontroluj výsledek** — nikdy nevěř slepě výstupu LLM, vždy ověř
 6. **Uč se z chyb** — když agent selže, analyzuj proč a zlepšuj task/kontext
 
