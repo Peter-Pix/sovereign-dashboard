@@ -1,4 +1,4 @@
-# Sovereign Dashboard — API Reference
+# Sovereign Command — API Reference
 
 Base URL: `http://localhost:8891`
 

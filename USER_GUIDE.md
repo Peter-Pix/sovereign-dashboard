@@ -9,13 +9,13 @@ Tato příručka tě provede vším — od prvního spuštění přes každou z�
 
 ## 📖 Obsah
 
-1. [Co je Sovereign Command](#-co-je-sovereign-dashboard)
+1. [Co je Sovereign Command](#-co-je-sovereign-command)
 2. [Rychlý start](#-rychlý-start)
 3. [Záložky UI — kompletní průvodce](#-záložky-ui--kompletní-průvodce)
 4. [Autonomní exekuce tasků](#-autonomní-exekuce-tasků)
 5. [Roadmapy — plánování a sledování](#-roadmapy--plánování-a-sledování)
 6. [Agenti a SSE streamy](#-agenti-a-sse-streamy)
-7. [Paparazzi — automatické reporty](#-paparazzi--automatické-reporty)
+7. [Funkce Paparazzi (integrovány do záložky Projekty)](#-funkce-paparazzi-integrovány-do-záložky-projekty)
 8. [Konfigurace a tuning výkonu](#-konfigurace-a-tuning-výkonu)
 9. [REST API — integrace a automatizace](#-rest-api--integrace-a-automatizace)
 10. [Užitečné workflow](#-užitečné-workflow)
@@ -38,13 +38,10 @@ ROADMAP.md (task [ ])  →  Executor vybere agenta  →  Agent dokončí task  �
 
 | Schopnost | Co dělá |
 |-----------|---------|
-| **Pulse** | Přehled všech Git projektů — health, aktivita, dirty stav |
-| **Pipeline** | Fronta tasků, priority, spouštění agentní exekuce |
+| **Projekty** | Srdce dashboardu: grid projektů, captures, reporty a detailní pohled |
+| **Roadmapy** | Plánování tasků + autonomní exekuce agentů (ExecutionPanel) |
 | **Leady** | Leady sesbírané Scout agentem (sektorové statistiky) |
 | **Agenti** | Manifesty a logy Sovereign agentů |
-| **Paparazzi** | Data collector: captures + reálná data + LLM report |
-| **Roadmapy** | Roadmapy projektů + autonomní exekuce tasků |
-| **Log** | Operační log milníků, vítězství a zápasů |
 | **Autonomní exekuce** | Až 3 paralelní sloty agentů s paměťovým guardem |
 
 ### Stack
@@ -112,7 +109,7 @@ Dashboard má **4 základní záložky** v horní navigaci, které tvoří centr
 
 ### 1. Projekty — centrum řízení a monitoring
 
-**Co to je:** Kombinace přehledu projektů (bývalý Pulse) a sběru dat (Paparazzi). Tady vidíš, co se v tvém ekosystému děje.
+**Co to je:** Kombinace přehledu projektů a sběru dat (Paparazzi). Tady vidíš, co se v tvém ekosystému děje.
 
 **Co uvidíš:**
 - **Grid projektů:** Všechny projekty pod `~/projects` s real-time stavem (commit, branch, dirty stav, health skóre).
@@ -130,9 +127,11 @@ Dashboard má **4 základní záložky** v horní navigaci, které tvoří centr
 **Co to je:** Centrální místo pro plánování tasků (`ROADMAP.md`/`PLAN.md`) a jejich autonomní spouštění.
 
 **Jak používat:**
-- Vyber projekt $ightarrow$ vidíš jeho roadmapu s fázemi a tasky.
+- Vyber projekt $
+ightarrow$ vidíš jeho roadmapu s fázemi a tasky.
 - Tasky s `[ ]` jsou otevřené, `[x]` hotové.
-- Spusť exekuci $ightarrow$ agent vybere task, dokončí ho a odškrtne.
+- Spusť exekuci $
+ightarrow$ agent vybere task, dokončí ho a odškrtne.
 - **ExecutionPanel:** Sleduješ sloty (`used/total`), frontu a aktivní streamy agentů.
 
 ### 3. Leady — Scout agent
@@ -363,7 +362,7 @@ openclaw agent --agent The Builder --json --model ollama/minimax-m3:cloud -m "Ú
 
 ### Action Center
 
-Z karty projektu (Pulse) můžeš:
+Z karty projektu můžeš:
 - **Spustit agenta** na projekt (Action Center)
 - **Otevřít VS Code** deep link přímo z karty
 
