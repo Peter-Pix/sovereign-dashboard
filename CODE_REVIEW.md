@@ -1,6 +1,10 @@
 # Sovereign Dashboard — Code Review & Fix Plan
 
-> Audit proveden 24. 8. 2026. Celkem **14 bugů** v 7 souborech.
+> **✅ AUDIT DOKONČEN** — všechny bugy (14) opravené a zalogované.
+> Tento soubor je **historický záznam** auditu z 24. 8. 2026.
+> Hlavní opravy ověřené v kódu: path traversal (allowedRoots + isSafeName),
+> activity z git timestampu (ne mtime), zombie SIGKILL, correlation ID.
+> Detailní stav: viz `README.md` a `USER_GUIDE.md`.
 
 ## 🟥 Kritické (5) — opravit ihned
 

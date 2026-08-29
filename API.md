@@ -113,6 +113,89 @@ Seznam leadů (deduplikovaných).
 
 ---
 
+### Alerty
+
+#### `GET /api/alerts`
+Seznam alertů se souhrnem.
+
+**Response:** `{ total, critical, warning, info, alerts: [...] }`
+
+#### `POST /api/alerts/:id/ack` 🔒
+Potvrdit alert (acknowledge).
+
+#### `POST /api/alerts/:id/dismiss` 🔒
+Zamítnout/odstranit alert.
+
+#### `POST /api/alerts/run-check` 🔒
+Spustit ruční kontrolu alertů.
+
+---
+
+### Konfigurace modelů
+
+#### `GET /api/config/model`
+Vrátí aktuálně nakonfigurovaný LLM model.
+
+**Response:** `{ execModel, ollamaModel }`
+
+#### `PUT /api/config/model` 🔒
+Nastaví LLM modely.
+
+**Body:** `{ "execModel": "ollama/minimax-m3:cloud", "ollamaModel": "..." }`
+
+#### `POST /api/config/model/reset` 🔒
+Resetuje model na default.
+
+---
+
+### MCP servery
+
+#### `GET /api/mcp`
+Seznam MCP serverů.
+
+#### `POST /api/mcp` 🔒
+Přidá MCP server.
+
+#### `GET /api/mcp/:name`
+Detail MCP serveru.
+
+#### `PUT /api/mcp/:name` 🔒
+Aktualizuje MCP server.
+
+#### `DELETE /api/mcp/:name` 🔒
+Odstraní MCP server.
+
+#### `GET /api/mcp/:name/status`
+Status připojení MCP serveru.
+
+#### `POST /api/mcp/:name/probe` 🔒
+Otestuje připojení (probe) MCP serveru.
+
+#### `POST /api/mcp/probe-all` 🔒
+Otestuje připojení všech MCP serverů.
+
+---
+
+### Admin — Rate limits
+
+#### `GET /api/admin/rate-limits`
+Vrátí stav rate limitů.
+
+#### `PUT /api/admin/rate-limits` 🔒
+Nastaví rate limity.
+
+#### `POST /api/admin/rate-limits/reset-usage` 🔒
+Resetuje využité kvóty rate limitů.
+
+---
+
+### Webhooks
+
+#### `POST /api/webhooks/github` 🔒
+Přijme GitHub webhook (push, PR, issues) a zpracuje ho.
+
+---
+
 ### Soubory
 
 #### `GET /api/files?p=<path>`
@@ -212,15 +295,39 @@ Stav exekuce (monitoring).
 
 **Response:** `{ totalExecutions, maxTotal, stuckTasks, activeAttempts }`
 
+#### `GET /api/executor/queue`
+Stav fronty exekuce.
+
+**Response:** `{ queueLength, current, active, slots, log, workerRunning, paused, budgetExhausted }`
+
+#### `POST /api/executor/queue/:project` 🔒
+Zařadí otevřené tasky projektu do fronty exekuce.
+
+#### `POST /api/executor/queue/pause` 🔒
+Pozastaví frontu exekuce (worker se zastaví).
+
+#### `POST /api/executor/queue/resume` 🔒
+Obnoví pozastavenou frontu exekuce.
+
+#### `POST /api/executor/process/pause` 🔒
+Pozastaví jeden task/agenta (per-process kill).
+
+**Body:** `{ "key": "..." }` — key tasku
+
+#### `POST /api/executor/process/resume` 🔒
+Obnoví pozastavený task.
+
+**Body:** `{ "key": "..." }`
+
+#### `POST /api/executor/project/pause` 🔒
+Pozastaví všechny tasky daného projektu.
+
+**Body:** `{ "project": "..." }`
+
 #### `POST /api/executor/run/:project` 🔒
 Spustí dokončení jednoho tasku.
 
 **Response:** `{ success, task, agent, marked, result }`
-
-#### `POST /api/executor/run-all/:project` 🔒
-Spustí dokončení všech tasků (sekvenčně, max 5).
-
-**Response:** `{ success, completed, failed, skipped, stopped }`
 
 #### `POST /api/executor/reset` 🔒
 Resetuje exekuční stav (nová session).
@@ -233,7 +340,7 @@ Executor má 4 vrstvy ochrany proti zacyklení:
 
 | Limit | Hodnota | Popis |
 |-------|---------|-------|
-| `MAX_TASKS_PER_RUN` | 5 | Max tasků v jednom `run-all` |
+| `MAX_TASKS_PER_RUN` | 5 | Max tasků v jedné dávkové exekuci projektu |
 | `MAX_RETRIES_PER_TASK` | 1 | Max pokusů na jeden task |
 | `MAX_TOTAL_EXECUTIONS` | 20 | Globální budget za session |
 | `COOLDOWN_MS` | 2000 | Min interval mezi exekucemi |

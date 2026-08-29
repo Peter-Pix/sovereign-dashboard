@@ -56,7 +56,10 @@ Zbytečnosti (každý commit, každý TODO, plné seznamy) se **nevyhazují do p
 | Method | Path | Popis |
 |--------|------|-------|
 | GET | `/api/paparazzi` | Seznam captures (screenshoty) |
-| GET | `/api/paparazzi/data` | Data collection: `{ projects, summary }` |
+| GET | `/api/paparazzi/data` | Data collection: `{ projects, summary, system, cached }` |
+| GET | `/api/paparazzi/report` | Manažer Report — **SSE stream** (LLM generovaný, token po tokenu) |
+| GET | `/api/paparazzi/history` | Historie reportů |
+| POST | `/api/paparazzi/capture` 🔒 | Trigger capture request (screenshot) |
 
 ## Jak to spustit
 

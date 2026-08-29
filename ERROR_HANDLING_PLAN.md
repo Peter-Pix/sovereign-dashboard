@@ -1,6 +1,10 @@
 # Error Handling — vylepšení
 
-> Plán proveden 24. 8. 2026. 12 slabých míst rozdělených do 3 fází.
+> **✅ PLÁN DOKONČEN** — všechny slabá místa (12) vyřešené a zalogované.
+> Tento soubor je **historický záznam** plánu z 24. 8. 2026.
+> Ověřené v kódu: error middleware, correlation ID, graceful shutdown,
+> SSE error handling, strukturované executor errors.
+> Detailní stav: viz `README.md` a `USER_GUIDE.md`.
 
 ## Fáze 1: Kritické (security + crash protection)
 

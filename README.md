@@ -61,6 +61,13 @@ cp .env.example .env
 | `VITE_AUTH_TOKEN` | Stejný token pro frontend | — |
 | `OLLAMA_URL` | Ollama API URL | `http://localhost:11434` |
 | `OLLAMA_MODEL` | LLM model pro reporty | `minimax-m3:cloud` |
+| `OLLAMA_API_KEY` | Bearer token z ollama.com (cloud modely) | — |
+| `EXEC_CONCURRENCY` | Max souběžných exekučních slotů | `3` |
+| `EXEC_MEMORY_GUARD` | Paměťový guard proti OOM (1=aktivní, 0=vypnutý) | `1` |
+| `EXEC_MIN_FREE_MB` | Min volná RAM pro spuštění dalšího agenta (MB) | `1500` |
+| `EXEC_AGENT_MEM_MB` | Odhad paměti na 1 agenta (MB) | `250` |
+| `SOVEREIGN_EXEC_MODEL` | Model pro exekuci | `ollama/deepseek-v4-flash:cloud` |
+| `SOVEREIGN_SKIP_PROJECTS` | Projekty vyřazené z exekuce (čárkou) | — |
 
 ## Architektura
 
@@ -78,7 +85,7 @@ sovereign-dashboard/
 │   │   ├── gitHelper.cjs   # Git operace (clone, fetch, status) + cache
 │   │   ├── logger.cjs      # Jednoduchý logger pro backend
 │   │   ├── mcpManager.cjs  # MCP server integrace — připojení externích databází pro agenty
-│   │   ├── modelStore.cjs  # Správa LLM modelů + routing (deepseek, minimax, nemotron)
+│   │   ├── modelStore.cjs  # Správa LLM modelů + routing (deepseek, minimax, kimi, gemma)
 │   │   ├── paparazzi.cjs   # LLM integrace + sběr dat + prompt (Archivist, KimiFix)
 │   │   ├── projects.cjs    # Sběr dat o Git projektech + cache (mtime-based)
 │   │   ├── rateLimiter.cjs # Rate limiting pro externí API (Ollama, GitHub)
@@ -119,7 +126,7 @@ sovereign-dashboard/
 │       ├── Leads.jsx       # Scout leady
 │       ├── Markdown.jsx    # Bezpečné renderování Markdownu
 │       ├── McpManager.jsx  # UI pro správu MCP serverů (připojení/odpojení)
-│       ├── ModelSwitcher.jsx # Přepínač LLM modelů (deepseek, minimax, nemotron)
+│       ├── ModelSwitcher.jsx # Přepínač LLM modelů (deepseek, minimax, kimi, gemma)
 │       ├── Paparazzi.jsx   # Orchestrátor (96 řádků)
 │       ├── ProjectDetail.jsx # Detail projektu + bug tickety + aktivní exekuce
 │       ├── Roadmaps.jsx    # Roadmapy + autonomní exekuze (hlavní UI)
@@ -193,13 +200,15 @@ npm run test -- tests/*.test.cjs | grep -E "pass|fail"  # shrnutí
 - **Inkrementální cache** — `/api/projects` <1ms (mtime-based)
 - **SSE streaming** — Manažer Report se vypisuje token po tokenu
 - **Loop protection** — Executor má retry limit, stuck detection, budget a cooldown
+- **Paměťový guard** — dynamicky omezí počet běžících agentů podle volné RAM (prevence OOM na 8GB mašině), přepínatelný přes `EXEC_MEMORY_GUARD`
 - **Optimistické UI** — bugy se přidávají instantně
 - **Action Center** — spuštění agenta + VS Code deep link přímo z karty projektu
 
 ## Dokumentace
 
 - **API reference:** viz [API.md](./API.md)
-- **Paparazzi:** viz `PAPARAZZI.md` (pokud existuje)
+- **Paparazzi:** viz [PAPARAZZI.md](./PAPARAZZI.md)
+- **Uživatelská příručka:** viz [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## Poznámky
 
