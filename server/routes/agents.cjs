@@ -184,7 +184,7 @@ module.exports = function registerAgents(app, deps) {
     rateLimitMiddleware.rateLimitByRoute("/api/projects/:name/run-agent"),
     asyncHandler(async (req, res) => {
     const { name } = req.params;
-    const { agent = "archivist" } = req.body || {};
+    const { agent = "archivist", task } = req.body || {};
     if (!isSafeName(name)) throw new HttpError(400, "Invalid project name");
     if (!AGENT_TASKS[agent]) throw new HttpError(404, `Neznámý agent: ${agent}`);
     if (runningJobs.size >= MAX_PARALLEL_JOBS) {
@@ -198,8 +198,18 @@ module.exports = function registerAgents(app, deps) {
     }
     if (!fs.existsSync(projectPath)) throw new HttpError(404, "Project not found");
 
-    const task = AGENT_TASKS[agent];
-    const projectPrompt = `Jsi ${task.name} — Sovereign OS. Pracuješ na projektu "${name}" v ${projectPath}.
+    const agentDef = AGENT_TASKS[agent];
+    // Pokud je zadán konkrétní task (např. "planner audit"), použij prompt z AGENT_TASKS
+    // (obsahuje planner režim). Jinak generický audit prompt (stávající chování).
+    const projectPrompt = task
+      ? `Jsi ${agentDef.name} — Sovereign OS. Pracuješ na projektu "${name}" v ${projectPath}.
+
+ÚKOL: ${task}
+
+${agentDef.prompt}
+
+Projekt: "${name}" (${projectPath}). Pracuj POUZE v tomto projektu.`
+      : `Jsi ${agentDef.name} — Sovereign OS. Pracuješ na projektu "${name}" v ${projectPath}.
 
 ÚKOL: Proveď audit a vylepšení projektu "${name}".
 
@@ -207,7 +217,7 @@ POSTUP:
 1. Prozkoumej strukturu projektu v ${projectPath} (README, zdrojové soubory, konfigurace).
 2. Identifikuj, co projekt dělá a jaký je jeho stav.
 3. Vylepši dokumentaci (README.md) s konkrétními informacemi.
-4. Zapiš shrnutí do ${path.join(config.SOVEREIGN_DIR, "workspaces", task.workspace, "project-audit-" + name + ".json")}.
+4. Zapiš shrnutí do ${path.join(config.SOVEREIGN_DIR, "workspaces", agentDef.workspace, "project-audit-" + name + ".json")}.
 
 Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
 

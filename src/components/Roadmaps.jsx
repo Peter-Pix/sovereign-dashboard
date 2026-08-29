@@ -52,11 +52,77 @@ function RoadmapCard({ p, onSelect }) {
 
 // ----- Detail roadmapy projektu -----
 function RoadmapDetail({ project, data, state, onBack }) {
+  const [planner, setPlanner] = useState(null); // null | {phase, running, result}
+  const [plannerRunning, setPlannerRunning] = useState(false);
+
+  // Spustí planner pipeline: Archivist (audit) → Strategist (roadmapa)
+  const runPlanner = async () => {
+    setPlannerRunning(true);
+    setPlanner({ phase: "audit", running: true, result: null });
+    try {
+      // Fáze 1: Archivist — strategický audit (zapíše state.md)
+      const res1 = await fetch(`${API}/api/projects/${encodeURIComponent(project)}/run-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-auth-token": import.meta.env.VITE_AUTH_TOKEN },
+        body: JSON.stringify({ agent: "archivist", task: "planner audit" }),
+      });
+      const d1 = await res1.json();
+      if (!res1.ok) throw new Error(d1.error || "Audit selhal");
+
+      // Fáze 2: Strategist — strategické plánování (zapíše ROADMAP.md)
+      setPlanner({ phase: "roadmap", running: true, result: null });
+      const res2 = await fetch(`${API}/api/projects/${encodeURIComponent(project)}/run-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-auth-token": import.meta.env.VITE_AUTH_TOKEN },
+        body: JSON.stringify({ agent: "strategist", task: "planner roadmap" }),
+      });
+      const d2 = await res2.json();
+      if (!res2.ok) throw new Error(d2.error || "Plánování selhalo");
+
+      setPlanner({ phase: "done", running: false, result: { success: true, text: "Roadmapa navržena. Obnov se pro zobrazení." } });
+    } catch (e) {
+      setPlanner({ phase: "error", running: false, result: { success: false, text: e.message } });
+    } finally {
+      setPlannerRunning(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="text-xs text-[#C89B3C] hover:text-[#8f6f26] transition-colors">
-        ← Zpět na přehled
-      </button>
+      <div className="flex items-center justify-between">
+        <button onClick={onBack} className="text-xs text-[#C89B3C] hover:text-[#8f6f26] transition-colors">
+          ← Zpět na přehled
+        </button>
+
+        {/* Roadmap Planner tlačítko */}
+        <button
+          onClick={runPlanner}
+          disabled={plannerRunning}
+          className="text-[10px] px-3 py-1.5 rounded-md border border-[#C89B3C]/40 text-[#C89B3C] hover:bg-[rgba(200,155,60,0.1)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          title="Archivist zjistí stav, Strategist navrhne roadmapu rozdělenou na malé tasky"
+        >
+          {plannerRunning
+            ? (planner?.phase === "audit" ? "🧠 Audit (Archivist)..." : "🧠 Plánování (Strategist)...")
+            : "🧠 Navrhnout roadmapu"}
+        </button>
+      </div>
+
+      {/* Planner stav */}
+      {planner && (
+        <div className={`p-3 rounded-md text-[11px] border ${
+          planner.result?.success
+            ? "bg-[rgba(62,207,142,0.1)] text-[#3ecf8e] border-[rgba(62,207,142,0.3)]"
+            : planner.result
+            ? "bg-[rgba(232,93,93,0.1)] text-[#e85d5d] border-[rgba(232,93,93,0.3)]"
+            : "bg-[rgba(200,155,60,0.08)] text-[#C89B3C] border-[rgba(200,155,60,0.3)]"
+        }`}>
+          {planner.running
+            ? (planner.phase === "audit"
+                ? "🔍 Archivist audituje stav projektu (zapisuje state.md)..."
+                : "🧠 Strategist navrhuje roadmapu (zapisuje ROADMAP.md)...")
+            : planner.result?.text}
+        </div>
+      )}
 
       {/* Exekuční panel — sdílená komponenta */}
       <ExecutionPanel project={project} state={state} runLabel="▶ Spustit celý task list" />

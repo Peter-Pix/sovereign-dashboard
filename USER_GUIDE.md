@@ -328,6 +328,16 @@ curl -X POST "http://localhost:8891/api/executor/run/:project" \
 
 > 💡 **Tip:** Spusť nejdřív "planner audit" (Archivist), pak "planner roadmap" (Strategist). Strategist potřebuje `state.md` od Archivista jako vstup.
 
+### 🖱️ UI tlačítko
+
+V záložce **Roadmapy** → otevři detail projektu → tlačítko **"🧠 Navrhnout roadmapu"** vpravo nahoře.
+
+Kliknutí automaticky spustí celou pipeline:
+1. **Archivist** — strategický audit (zapíše `state.md`)
+2. **Strategist** — strategické plánování (zapíše `ROADMAP.md`)
+
+UI zobrazuje průběh (audit → plánování → hotovo). Po dokončení se roadmapa obnoví (přepni záložku nebo počkej na refresh).
+
 ---
 
 ## 🗺️ Roadmapy — plánování a sledování
