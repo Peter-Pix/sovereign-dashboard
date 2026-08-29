@@ -84,10 +84,12 @@ sovereign-dashboard/
 │   │   ├── githubWebhook.cjs # Příjem a zpracování GitHub webhooků
 │   │   ├── gitHelper.cjs   # Git operace (clone, fetch, status) + cache
 │   │   ├── logger.cjs      # Jednoduchý logger pro backend
+│   │   ├── mcpContext.cjs  # Sestavování MCP kontext sekce pro agenty (best-effort)
 │   │   ├── mcpManager.cjs  # MCP server integrace — připojení externích databází pro agenty
 │   │   ├── modelStore.cjs  # Správa LLM modelů + routing (deepseek, minimax, kimi, gemma)
 │   │   ├── paparazzi.cjs   # LLM integrace + sběr dat + prompt (Archivist, KimiFix)
 │   │   ├── projects.cjs    # Sběr dat o Git projektech + cache (mtime-based)
+│   │   ├── rateLimitMiddleware.cjs # Rate limiting middleware (Express)
 │   │   ├── rateLimiter.cjs # Rate limiting pro externí API (Ollama, GitHub)
 │   │   ├── roadmapMerge.cjs # Dedup více .md roadmap souborů (neplýtvá tokeny)
 │   │   ├── roadmapState.cjs # One source of truth pro roadmapy — stav, sloty, aktivní tasky
@@ -106,13 +108,13 @@ sovereign-dashboard/
 │       ├── health.cjs      # /health
 │       ├── leads.cjs       # /api/leads
 │       ├── mcp.cjs         # /api/mcp
-│       ├── models.cjs      # /api/models
+│       ├── models.cjs      # /api/config/model
 │       ├── paparazzi.cjs   # /api/paparazzi/*
 │       ├── projects.cjs    # /api/projects
-│       ├── rateLimits.cjs  # /api/rate-limits
-│       ├── roadmaps.cjs    # /api/roadmaps
-│       └── selfCorrector.cjs # /api/self-corrector
+│       ├── rateLimits.cjs  # /api/admin/rate-limits
+│       └── roadmaps.cjs    # /api/roadmaps
 ├── src/
+│   ├── main.jsx            # Entry point (React root)
 │   ├── App.jsx             # Tab shell + routing + clock
 │   ├── config.js           # API base URL + auth + client cache
 │   └── components/
@@ -140,10 +142,11 @@ sovereign-dashboard/
 │           ├── SystemGauge.jsx # CPU/RAM/disk gauge
 │           ├── Stat.jsx        # Stat + MiniStat
 │           └── constants.js    # Sdílené konstanty
-├── tests/                  # Unit + integration + e2e testy (node:test + Playwright)
+├── tests/                  # Unit + integration testy (node:test)
 │   ├── alerts.test.cjs       # Alerty: detekce, správa, stream
 │   ├── commandPalette.test.cjs # Command palette: vyhledávání, historie, akce
 │   ├── contextBuilder.test.cjs # Kontext pro agenty: task + environment
+│   ├── e2e-parallel-execution.test.cjs # Paralelní exekuce (3 sloty) + adaptivní řízení (node:test, --test-concurrency=1)
 │   ├── executor.test.cjs     # Executor: pool worker, adaptivní řízení, model routing
 │   ├── githubWebhook.test.cjs # GitHub webhook: parsování, validace, akce
 │   ├── integration.test.cjs  # API endpointy: projekty, agents, executor, health
@@ -157,12 +160,13 @@ sovereign-dashboard/
 │   ├── routes.test.cjs       # Route registrace, middleware, error handling
 │   ├── selfCorrector.test.cjs # Sebekorekce: detekce stuck tasků, retry, cooldown
 │   ├── sse.test.cjs          # SSE streamy: připojení, zprávy, restart
-│   ├── unit.test.cjs         # Čisté funkce: normalizaci, parsing, validaci
-│   ├── e2e-parallel-execution.test.cjs # Paralelní exekuce (3 sloty) + adaptivní řízení
-│   └── e2e/                  # Playwright e2e testy (UI + API)
-│       ├── homepage.spec.js          # UI: navigace, projekt grid, základní akce
-│       ├── project-detail.spec.js    # UI: detail projektu, aktivní exekuce, bug tickety
-│       └── roadmaps.spec.js          # UI: roadmapy, autonomní exekuze, sloty, tlačítka
+│   └── unit.test.cjs         # Čisté funkce: normalizaci, parsing, validaci
+└── e2e/                      # Playwright e2e testy (testDir dle playwright.config.mjs)
+    ├── agent-execution.spec.mjs     # Exekuce agenta (stream, timeout, error states)
+    ├── dashboard.spec.mjs           # UI: navigace, projekt grid, základní akce
+    ├── error-states.spec.mjs        # UI: chybové stavy a fallbacky
+    ├── paparazzi-api.spec.mjs       # Paparazzi API endpointy
+    └── roadmaps-executor.spec.mjs   # UI/API: roadmapy, autonomní exekuce, sloty, tlačítka
 ```
 
 ## Testy
@@ -174,25 +178,28 @@ npm run test:all          # unit + integration dohromady
 npm run test:e2e          # Playwright e2e testy (bez @slow)
 npm run test:e2e:slow     # pomalé testy (reálná exekuce agenta)
 npm run test:lifecycle    # Životní cyklus tasků: enqueue, start, pause, resume, done
-npm run test              # alias pro test:all
+npm run test              # jen unit.test.cjs (node --test tests/unit.test.cjs)
 ```
 
-**Celkem 198 testů** na 3 vrstvách (unit + integration + e2e) ve 18 test souborech:
-- **Unit + integration** (node:test): 16 souborů, 174 testů
-  - alerts, commandPalette, contextBuilder, executor, githubWebhook, integration, lifecycle, logger, mcpManager, modelStore, rateLimiter, roadmapMerge, roadmapState, routes, selfCorrector, sse, unit
-- **E2E** (Playwright): 2 soubory, 24 testů
-  - e2e-parallel-execution (3 testy: paralelita, adaptivní řízení, odškrtnutí)
-  - e2e/ (21 testů: UI navigace, projekt grid, detail projektu, roadmapy, autonomní exekuze)
+**Celkem 198 testů** v 18 souborech `node:test` (`tests/*.test.cjs`):
+  - alerts, commandPalette, contextBuilder, e2e-parallel-execution, executor, githubWebhook, integration, lifecycle, logger, mcpManager, modelStore, rateLimiter, roadmapMerge, roadmapState, routes, selfCorrector, sse, unit
+
+**Plus 24 Playwright e2e testů** ve 4 souborech v `./e2e/` (testDir dle `playwright.config.mjs`):
+  - agent-execution, dashboard, error-states, paparazzi-api, roadmaps-executor
+  - spouští se přes `npm run test:e2e` (vylučuje `@slow` testy)
+
+Z toho **`tests/e2e-parallel-execution.test.cjs`** (node:test) je automatický E2E test paralelní exekuce (3 testy: paralelita, adaptivní řízení, odškrtnutí) — běží s `--test-concurrency=1` (sdílený globální stav).
 
 ```bash
 # Spustit jen konkrétní test soubor
 npm run test:unit           # jen unit.test.cjs
 npm run test -- tests/executor.test.cjs   # jen executor testy
-npm run test:e2e -- e2e/roadmaps.spec.js  # jen roadmaps e2e
+npx playwright test roadmaps.spec.js     # jen roadmaps e2e (pokud soubor existuje)
 
 # Spustit skupiny testů
 npm run test:lifecycle      # lifecycle.test.cjs
 npm run test -- tests/*.test.cjs | grep -E "pass|fail"  # shrnutí
+npx playwright test agent-execution  # jen jeden e2e soubor
 ```
 
 ## Klíčové vlastnosti
