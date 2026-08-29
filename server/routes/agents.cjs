@@ -185,12 +185,17 @@ module.exports = function registerAgents(app, deps) {
     asyncHandler(async (req, res) => {
     const { name } = req.params;
     const { agent = "archivist", task } = req.body || {};
+
+    // --- Validace vstupů ---
     if (!isSafeName(name)) throw new HttpError(400, "Invalid project name");
     if (!AGENT_TASKS[agent]) throw new HttpError(404, `Neznámý agent: ${agent}`);
+    if (task !== undefined && typeof task !== "string") throw new HttpError(400, "Task musí být string");
+    if (task && task.length > 2000) throw new HttpError(400, "Task je příliš dlouhý (max 2000 znaků)");
     if (runningJobs.size >= MAX_PARALLEL_JOBS) {
       throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.`);
     }
 
+    // --- Bezpečnost cesty ---
     const projectPath = path.join(config.PROJECTS_DIR, name);
     const resolved = path.resolve(projectPath);
     if (!resolved.startsWith(path.resolve(config.PROJECTS_DIR))) {
@@ -222,6 +227,9 @@ POSTUP:
 Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
 
     const jobKey = `${agent}:${name}`;
+    if (runningJobs.has(jobKey)) {
+      throw new HttpError(429, `Agent ${agent} už běží na projektu ${name}`);
+    }
     runningJobs.add(jobKey);
 
     try {
@@ -248,15 +256,16 @@ Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
         const data = JSON.parse(stdout);
         const payloads = data.result?.payloads || [];
         const text = payloads.map((p) => p.text || "").join("\n");
-        return res.json({ success: true, text, agent: task.name, project: name });
+        return res.json({ success: true, text, agent: agent, project: name });
       } catch {
         let text = (stdout || "").trim();
         if (!text) text = "(Agent dokončil, ale nevrátil žádný výstup.)";
         else if (text.length > 2000) text = text.slice(0, 2000) + "\n[... truncated]";
-        return res.json({ success: true, text, agent: task.name, project: name });
+        return res.json({ success: true, text, agent: agent, project: name });
       }
     } catch (e) {
       runningJobs.delete(jobKey); // safety cleanup
+      logError({ err: e, req, extra: { source: "run-agent", agent, project: name, task: task || "generic" } });
       throw new HttpError(500, `Exekuce selhala: ${e.message}`, { expose: false });
     }
   }));
