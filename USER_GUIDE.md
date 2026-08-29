@@ -642,11 +642,11 @@ Bez tokenu vrací `401 Unauthorized`.
 
 **Cíl:** Strukturovaně přidat novou funkci s minimálním rizikem regrese.
 
-1. **Analýza:** `## Fáza: Analýza` → `- [ ] Pochopit požadavek a navrhnout řešení` → agent `Strateg`
-2. **Implementace:** `## Fáza: Implementace` → `- [ ] Implementovat core funkci X` → agent `The Builder`
-3. **Testování:** `## Fáza: Testování` → `- [ ] Napsat a spustit testy pro X` → agent `Tester`
-4. **Dokumentace:** `## Fáza: Dokumentace` → `- [ ] Aktualizovat README` → agent `Documentarian`
-5. **Kontrola:** `## Fáza: Kontrola` → `- [ ] Spustit linting, build, integrační testy`
+1. **Analýza:** `## Fáze: Analýza` → `- [ ] Pochopit požadavek a navrhnout řešení` → agent `Strateg`
+2. **Implementace:** `## Fáze: Implementace` → `- [ ] Implementovat core funkci X` → agent `The Builder`
+3. **Testování:** `## Fáze: Testování` → `- [ ] Napsat a spustit testy pro X` → agent `Tester`
+4. **Dokumentace:** `## Fáze: Dokumentace` → `- [ ] Aktualizovat README` → agent `Documentarian`
+5. **Kontrola:** `## Fáze: Kontrola` → `- [ ] Spustit linting, build, integrační testy`
 
 ### Workflow 3: Řešení technického dluhu
 
