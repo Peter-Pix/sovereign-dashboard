@@ -1,10 +1,10 @@
-# Sovereign Command Center
+# Sovereign Command
 
-Dark, minimalistický operační dashboard pro **Sovereign OS** — centrální nervový systém, který nahrazuje roztroušené terminálové kontroly jediným command centerem.
+Dark, minimalistický operační dashboard pro **Sovereign OS** — centrální rozhraní pro správu projektů, agentní exekuce a real-time monitoring.
 
 ## Co to je
 
-Sovereign Dashboard dává real-time přehled nad lokálními Git projekty, agentním pipeline, logy, Paparazzi captures, roadmapami a **autonomní exekucí tasků**. Uzavírá kruh autonomního systému:
+Sovereign Command poskytuje real-time přehled nad lokálními projekty, autonomní exekucí tasků, agentní pipeline a daty z Paparazzi captures. Je to kontrolní vrstva nad celým Sovereign OS:
 
 ```
 ROADMAP.md (task [ ])  →  Executor vybere agenta  →  Agent dokončí task  →  [x] odškrtnuto
@@ -14,13 +14,10 @@ ROADMAP.md (task [ ])  →  Executor vybere agenta  →  Agent dokončí task  �
 
 | Záložka | Popis |
 |---------|-------|
-| **Pulse** | Všechny Git projekty pod `~/projects` — poslední commit, branch, dirty stav, health |
-| **Pipeline** | Fronta tasků a priority + spouštění reálné agentní exekuce |
-| **Leady** | Leady sesbírané Scout agentem (sektorové statistiky + filtrování) |
-| **Agenti** | Manifesty a logy jednotlivých Sovereign agentů |
-| **Paparazzi** | Data collector: captures (fotky) + reálná data o projektech + Manažer Report (LLM) |
-| **Roadmapy** | Roadmapy projektů (čtené z `ROADMAP.md`/`PLAN.md`) + autonomní exekuce tasků |
-| **Log** | Operační log milníků, vítězství a zápasů |
+| **Projekty** | Srdce dashboardu: grid projektů, captures (screenshoty), Manažer Report (LLM) a detailní pohled do projektů |
+| **Roadmapy** | Centrální pohled na tasky všech projektů + spouštění autonomní exekuce agentů |
+| **Leady** | Sběr a analýza leadů z anotačních dat (Scout agent) |
+| **Agenti** | Přehled manifestů, aktuálního stavu a logů jednotlivých Sovereign agentů |
 
 ## Stack
 
