@@ -38,7 +38,7 @@ module.exports = function registerRoadmaps(app, deps) {
       try {
         const content = fs.readFileSync(path.join(projectDir, file), "utf8");
         results.push({ file, content, parsed: parseRoadmap(content) });
-      } catch (e) {
+      } catch {
         // skip unreadable file
       }
     }

@@ -38,7 +38,6 @@ const modelStore = require("./lib/modelStore.cjs");
 const mcpManager = require("./lib/mcpManager.cjs");
 const rateLimitMiddleware = require("./lib/rateLimitMiddleware.cjs");
 const alerts = require("./lib/alerts.cjs");
-const { rateLimitGlobal } = rateLimitMiddleware;
 const { isSafeName, listProjectDirs, getProjectInfo, getProjectsCached, SKIP_DIRS, collectProjectData, summarizeProjects } = require("./lib/projects.cjs");
 const { collectSystemData } = require("./lib/system.cjs");
 const { buildPaparazziPrompt, callOllama, gatherAllData, PAPARAZZI_REPORT_DIR, PAPARAZZI_REPORT_FILE, PAPARAZZI_HISTORY_FILE } = require("./lib/paparazzi.cjs");

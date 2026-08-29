@@ -6,7 +6,7 @@ const rateLimiter = require("../lib/rateLimiter.cjs");
 const { stripAnsi } = require("../lib/streamUtils.cjs");
 
 module.exports = function registerAgents(app, deps) {
-  const { config, requireAuth, AGENT_TASKS, runAgentExe, runAgentStream, execOpenclawWithRetry, isTransientSqliteLock, isSafeName, rateLimitMiddleware } = deps;
+  const { config, requireAuth, AGENT_TASKS, runAgentExe, runAgentStream, execOpenclawWithRetry, isSafeName, rateLimitMiddleware } = deps;
 
   app.get("/api/agents", asyncHandler(async (req, res) => {
     const agentsDir = path.join(config.SOVEREIGN_DIR, "workspaces");
@@ -272,7 +272,7 @@ Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
         logError({ err: last, req, extra: { source: "run-agent", agent, project: name, task: task || "generic", retried: true } });
         throw new HttpError(500, `Exekuce selhala: ${msg}`, { expose: false });
       }
-      const { stdout, stderr } = retry;
+      const { stdout } = retry;
       releaseJob(jobKey);
 
       try {

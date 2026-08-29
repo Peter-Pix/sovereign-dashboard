@@ -3,7 +3,6 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
 const config = require("../config.cjs");
 const rateLimiter = require("./rateLimiter.cjs");
 
@@ -112,7 +111,6 @@ function getAlerts() {
 // ===== Detectory =====
 
 function detectProjectStagnation(projects, staleDays = 7) {
-  const now = Date.now();
   for (const p of projects) {
     const daysSinceCommit = p.daysSinceCommit ?? p.health?.daysSinceCommit ?? 999;
     if (daysSinceCommit >= staleDays) {
@@ -199,7 +197,7 @@ function detectExecutorState(queueState, executionState) {
 
 // ===== Runner =====
 
-async function runChecks(deps = {}) {
+async function runChecks(_deps = {}) {
   const start = Date.now();
 
   try {

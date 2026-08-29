@@ -8,13 +8,14 @@ function stripAnsi(raw) {
   if (!raw) return "";
 
   // Odstraň ANSI escape sekvence (barevné kódy, cursor movement, clear, atd.)
-  let text = raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+  // oxlint-disable-next-line no-control-regex -- ANSI ESC (U+001B) je záměrný
+  let text = raw.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "");
 
   // Odstraň progress indikátory openclaw (spinery a checkmarks)
-  text = text.replace(/[⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳↻⚡🌐📡💬📝🔍✅❌✗✘×+\-*/\\|‣▪▸▸►]/g, "");
+  text = text.replace(/[⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳↻⚡🌐📡💬📝🔍✅❌✗✘×+\-*/\\|‣▪▸▸►]/gu, "");
 
   // Odstraň progress řádky (prázdné nebo jen s indikátory)
-  text = text.replace(/^[\s⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳\->\|\\\/]+$/gm, "");
+  text = text.replace(/^[\s⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳\->|\\/]+$/gmu, "");
 
   // Odstraň leading/trailing whitespace z každého řádku (pro čistý výstup)
   text = text.split("\n").map(l => l.trimEnd()).join("\n");

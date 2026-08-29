@@ -1,5 +1,5 @@
 // ===== Reálná exekuce Sovereign agentů (přes OpenClaw agenta) =====
-const { execFile, spawn } = require("child_process");
+const { spawn } = require("child_process");
 const config = require("../config.cjs");
 
 const AGENT_TASKS = {
@@ -140,9 +140,10 @@ PRAVIDLA:
 // ANSI strip + chunk buffering pro clean stream
 function stripAnsi(raw) {
   if (!raw) return "";
-  let text = raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
-  text = text.replace(/[⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳↻⚡🌐📡💬📝🔍✅❌✗✘×+\-*/\\|‣▪▸▸►]/g, "");
-  text = text.replace(/^[\s⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳\->\\|\\/]+$/gm, "");
+  // oxlint-disable-next-line no-control-regex -- ANSI ESC (U+001B) je záměrný
+  let text = raw.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "");
+  text = text.replace(/[⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳↻⚡🌐📡💬📝🔍✅❌✗✘×+\-*/\\|‣▪▸▸►]/gu, "");
+  text = text.replace(/^[\s⠋⠙⠹⠸⠼⠴⠦⠧⸩✔✓⟳\->|\\/]+$/gmu, "");
   text = text.split("\n").map(l => l.trimEnd()).join("\n").trim();
   return text;
 }

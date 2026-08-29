@@ -9,7 +9,6 @@ const { buildContext } = require("./contextBuilder.cjs");
 const { buildMcpContextSection } = require("./mcpContext.cjs");
 const { selfCorrect } = require("./selfCorrector.cjs");
 const config = require("../config.cjs");
-const { parseRoadmap, findRoadmapFiles } = require("./roadmaps.cjs");
 const { mergeProjectRoadmaps } = require("./roadmapMerge.cjs");
 const { AGENT_TASKS } = require("./agents.cjs");
 const { isSafeName } = require("./projects.cjs"); // použito pro validaci projectName
@@ -124,7 +123,7 @@ function normalizeForRouting(text) {
 
 // Model pro daného agenta. Phase 1: VŠE na jednom modelu (EXEC_MODEL).
 // Kdyby se v budoucnu kombinovaly modely, stačí tady přidat mapu per agent.
-function modelForAgent(agentName) {
+function modelForAgent(_agentName) {
   return config.EXEC_MODEL; // deepseek default
 }
 
@@ -282,11 +281,9 @@ function markTaskDone(projectName, file, taskText) {
 // Vrací true pokud alespoň v jednom souboru odškrtl.
 function markTaskDoneMulti(projectName, sources, taskText) {
   if (!sources || sources.length === 0) return markTaskDone(projectName, null, taskText);
-  let anyMarked = false;
   let anyFound = false;
   for (const file of sources) {
     const marked = markTaskDone(projectName, file, taskText);
-    if (marked) anyMarked = true;
     anyFound = anyFound || marked;
   }
   // Pokud žádný soubor nenašel shodu → false (stuck), jinak true
@@ -700,7 +697,7 @@ function startQueueWorker() {
 
       console.log(`[Executor] (queue) Spouštím ${item.agent} (${model}) na: "${item.task}" [${executionState.active.length}/${LIMITS.MAX_CONCURRENT} slotů]`);
 
-      runTaskAgent(item.agent, item.project, item.task, (err, result) => {
+      runTaskAgent(item.agent, item.project, item.task, (err, _result) => {
         // Odeber z active poolu
         const idx = executionState.active.indexOf(activeEntry);
         if (idx !== -1) executionState.active.splice(idx, 1);

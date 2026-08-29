@@ -14,7 +14,7 @@ function getLastDiff(projectPath) {
       maxBuffer: 2 * 1024 * 1024,
     });
     return diff || "";
-  } catch (e) {
+  } catch {
     // exit code 1 = žádné změny, to není chyba
     return "";
   }

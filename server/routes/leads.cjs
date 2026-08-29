@@ -1,7 +1,7 @@
 // ===== Routes: Leady =====
 const fs = require("fs");
 const path = require("path");
-const { asyncHandler, HttpError } = require("../lib/logger.cjs");
+const { asyncHandler } = require("../lib/logger.cjs");
 
 module.exports = function registerLeads(app, deps) {
   const { config } = deps;

@@ -4,7 +4,6 @@
 const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const config = require("../config.cjs");
 const { getLastDiff } = require("./gitHelper.cjs");
 
 const MAX_RETRIES = 3;

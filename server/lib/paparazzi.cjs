@@ -35,7 +35,7 @@ async function streamTokens(response, extractToken, onToken) {
         }
         // done:true → ukonči i vnější smyčku (dřív se break týkal jen vnitřní for)
         if (json.done) { done = true; break; }
-      } catch (e) {
+      } catch {
         // ignoruj nevalidní JSON
       }
     }

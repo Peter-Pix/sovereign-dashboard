@@ -8,7 +8,7 @@
 // Odstraňuje nekonzistenci mezi markdown stavem a in-memory stavem exekuce
 // a centralizuje "co se zobrazuje" na serveru.
 
-const { collectRoadmaps, findRoadmapFiles } = require("./roadmaps.cjs");
+const { collectRoadmaps } = require("./roadmaps.cjs");
 const { mergeProjectRoadmaps, dedupStats } = require("./roadmapMerge.cjs");
 const { AGENT_TASKS } = require("./agents.cjs");
 

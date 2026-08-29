@@ -136,7 +136,7 @@ function logError({ err, req, category, status, extra = {} }) {
 }
 
 // Express error middleware (musí mít 4 args!)
-function errorMiddleware(err, req, res, next) {
+function errorMiddleware(err, req, res, _next) {
   if (res.headersSent) {
     // Hlavičky už odeslány → nelze měnit response, jen abort
     console.error(`[${req.correlationId || "—"}] Headers already sent, aborting connection`);

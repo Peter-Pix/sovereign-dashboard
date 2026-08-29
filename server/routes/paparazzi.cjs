@@ -128,7 +128,7 @@ module.exports = function registerPaparazzi(app, deps) {
         fullReport = await callOllama(prompt, (token) => {
           try {
             res.write(`data: ${JSON.stringify({ type: "token", content: token })}\n\n`);
-          } catch (e) {
+          } catch {
             // Klient odpojen — abort
             throw new HttpError(499, "Client disconnected");
           }
@@ -152,7 +152,7 @@ module.exports = function registerPaparazzi(app, deps) {
       try {
         res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
         res.end();
-      } catch (e) {
+      } catch {
         // Klient odpojen, nic s tím
       }
     } catch (e) {

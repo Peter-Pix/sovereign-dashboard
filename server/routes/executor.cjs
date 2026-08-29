@@ -1,6 +1,5 @@
 // ===== Routes: Roadmap Executor (autonomní dokončování tasků) =====
 const { asyncHandler, HttpError } = require("../lib/logger.cjs");
-const rateLimiter = require("../lib/rateLimiter.cjs");
 
 module.exports = function registerExecutor(app, deps) {
   const {

@@ -119,7 +119,7 @@ function collectRoadmaps() {
           ...parsed,
           updatedAt: fs.statSync(path.join(projectDir, file)).mtime.toISOString(),
         });
-      } catch (e) {
+      } catch {
         // Přeskoč nečitelné soubory
       }
     }

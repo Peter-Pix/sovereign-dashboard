@@ -42,7 +42,7 @@ function persist() {
 // Model name je jako "ollama/kimi-k2.7-code:cloud" — povolíme alfanumerické,
 // tečky, podtržítka, pomlčky, dvojtečky a JEDEN lomítko (namespace/model).
 // Zakážeme ".." (path traversal) a lomítka na začátku/konci.
-const MODEL_NAME_RE = /^(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._:\/-]+$/;
+const MODEL_NAME_RE = /^(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._:/-]+$/;
 function isValidModelName(name) {
   if (typeof name !== "string" || name.length === 0 || name.length > 200) return false;
   if (!MODEL_NAME_RE.test(name)) return false;

@@ -14,29 +14,9 @@
 
 const { execFile } = require("child_process");
 const path = require("path");
-const config = require("../config.cjs");
 
 const OPENCLAW_BIN = process.env.OPENCLAW_BIN || "openclaw";
 const OPENCLAW_CONFIG = process.env.OPENCLAW_CONFIG || path.join(process.env.HOME, ".openclaw/openclaw.json");
-
-// ── Low-level exec wrapper ────────────────────────────────────────────
-function runOpenclaw(args, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const env = { ...process.env, OPENCLAW_CONFIG };
-    execFile(OPENCLAW_BIN, args, {
-      timeout: timeoutMs,
-      maxBuffer: 10 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"], // stdin closed — CLI jinak čeká na input
-      env,
-    }, (err, stdout, stderr) => {
-      if (err) {
-        const msg = (stderr || stdout || err.message || "").trim();
-        return reject(new Error(`openclaw ${args[0]}: ${msg}`));
-      }
-      resolve({ stdout, stderr });
-    });
-  });
-}
 
 // ── Validace názvu (path/CLI injection ochrana) ─────────────────────────
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;

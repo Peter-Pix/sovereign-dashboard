@@ -2,7 +2,6 @@
 // Přijímá GitHub webhook events, ověřuje HMAC podpis a spouští akce.
 
 const crypto = require("crypto");
-const config = require("../config.cjs");
 
 const DEFAULT_SECRET = process.env.GITHUB_WEBHOOK_SECRET || null;
 

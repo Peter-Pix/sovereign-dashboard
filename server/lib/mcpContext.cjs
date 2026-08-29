@@ -30,7 +30,7 @@ async function buildMcpContextSection({ maxServers = 10 } = {}) {
     });
 
     return `\n\n## Dostupný MCP nástroje (Model Context Protocol)\nMáš přístup k těmto MCP serverům. Pokud úkol vyžaduje práci s databází nebo externím nástrojem, použij odpovídající MCP tool:\n${lines.join("\n")}\nPoužívej MCP tools jen když to úkol vyžaduje — nevyužívej je zbytečně.`;
-  } catch (e) {
+  } catch {
     return ""; // MCP není kritické — pokud selže, pokračuj bez něj
   }
 }
