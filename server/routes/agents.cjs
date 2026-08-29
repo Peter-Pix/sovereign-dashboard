@@ -40,9 +40,34 @@ module.exports = function registerAgents(app, deps) {
   }));
 
   // Rate-limited job execution
-  const runningJobs = new Set();
+  const runningJobs = new Map(); // Map<jobKey, startedAt> — sledujeme i čas spuštění
   const MAX_PARALLEL_JOBS = 2;
   const cleanup = () => runningJobs.clear();
+
+  // Atomické přidání jobu — kontrola limitu + zápis v jedné operaci (prevence race condition)
+  const acquireJob = (key) => {
+    if (runningJobs.has(key)) return { ok: false, reason: "duplicate", message: `Agent/job ${key} už běží` };
+    if (runningJobs.size >= MAX_PARALLEL_JOBS) {
+      return { ok: false, reason: "limit", message: `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.` };
+    }
+    runningJobs.set(key, Date.now());
+    return { ok: true };
+  };
+
+  const releaseJob = (key) => {
+    runningJobs.delete(key);
+  };
+
+  // Průběžný cleanup — odstraní zaseknuté joby (starší než timeout + buffer)
+  const STUCK_MS = 310000; // 300s timeout + 10s buffer
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, startedAt] of runningJobs.entries()) {
+      if (now - startedAt > STUCK_MS) {
+        runningJobs.delete(key);
+      }
+    }
+  }, 30000).unref(); // neblokuje shutdown
   process.on("SIGTERM", cleanup);
   process.on("SIGINT", cleanup);
 
@@ -52,7 +77,13 @@ module.exports = function registerAgents(app, deps) {
     requireAuth,
     rateLimitMiddleware.rateLimitByRoute("/api/agents/:name/stream"), asyncHandler(async (req, res) => {
     const { name } = req.params;
+    const { task, project } = req.query;
     if (!AGENT_TASKS[name]) throw new HttpError(404, `Neznámý agent: ${name}`);
+    if (task !== undefined) {
+      if (typeof task !== "string") throw new HttpError(400, "Task musí být string");
+      if (task.length > 2000) throw new HttpError(400, "Task je příliš dlouhý (max 2000 znaků)");
+    }
+    if (project !== undefined && !isSafeName(project)) throw new HttpError(400, "Invalid project name");
 
     // Token budget check (odhad před spuštěním)
     const estimated = rateLimiter.estimateTokens(config.EXEC_MODEL, AGENT_TASKS[name].prompt);
@@ -64,11 +95,10 @@ module.exports = function registerAgents(app, deps) {
       });
     }
 
-    if (runningJobs.size >= MAX_PARALLEL_JOBS) {
-      throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.`);
+    const acquire = acquireJob(name);
+    if (!acquire.ok) {
+      throw new HttpError(acquire.reason === "limit" ? 429 : 409, acquire.message);
     }
-
-    runningJobs.add(name);
 
     // SSE setup
     res.setHeader("Content-Type", "text/event-stream");
@@ -105,7 +135,7 @@ module.exports = function registerAgents(app, deps) {
       if (!res.writableEnded) {
         try { res.end(); } catch {}
       }
-      runningJobs.delete(name);
+      releaseJob(name);
     };
 
     req.on("close", cleanupStream);
@@ -115,6 +145,8 @@ module.exports = function registerAgents(app, deps) {
     send("start", { agent: name });
 
     const handle = runAgentStream(name, {
+      taskText: task,
+      projectName: project,
       onStdout: (chunk) => {
         send("stdout", { chunk });
       },
@@ -159,22 +191,21 @@ module.exports = function registerAgents(app, deps) {
       });
     }
 
-    if (runningJobs.size >= MAX_PARALLEL_JOBS) {
-      throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.`);
+    const acquire = acquireJob(name);
+    if (!acquire.ok) {
+      throw new HttpError(acquire.reason === "limit" ? 429 : 409, acquire.message);
     }
-
-    runningJobs.add(name);
     try {
       const result = await new Promise((resolve, reject) => {
         runAgentExe(name, (err, result) => {
-          runningJobs.delete(name); // cleanup vždy, ať dopadne jakkoliv
+          releaseJob(name); // cleanup vždy, ať dopadne jakkoliv
           if (err) return reject(err);
           resolve(result);
         });
       });
       res.json({ success: true, ...result });
     } catch (e) {
-      runningJobs.delete(name); // safety cleanup pro případ promise reject
+      releaseJob(name); // safety cleanup pro případ promise reject
       throw new HttpError(500, `Agent exekuce selhala: ${e.message}`, { expose: false });
     }
   }));
@@ -191,8 +222,9 @@ module.exports = function registerAgents(app, deps) {
     if (!AGENT_TASKS[agent]) throw new HttpError(404, `Neznámý agent: ${agent}`);
     if (task !== undefined && typeof task !== "string") throw new HttpError(400, "Task musí být string");
     if (task && task.length > 2000) throw new HttpError(400, "Task je příliš dlouhý (max 2000 znaků)");
-    if (runningJobs.size >= MAX_PARALLEL_JOBS) {
-      throw new HttpError(429, `Max ${MAX_PARALLEL_JOBS} paralelní joby. Zkuste to později.`);
+    const acquire = acquireJob(`${agent}:${name}`);
+    if (!acquire.ok) {
+      throw new HttpError(acquire.reason === "limit" ? 429 : 409, acquire.message);
     }
 
     // --- Bezpečnost cesty ---
@@ -227,10 +259,6 @@ POSTUP:
 Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
 
     const jobKey = `${agent}:${name}`;
-    if (runningJobs.has(jobKey)) {
-      throw new HttpError(429, `Agent ${agent} už běží na projektu ${name}`);
-    }
-    runningJobs.add(jobKey);
 
     try {
       const { execFile } = require("child_process");
@@ -250,7 +278,7 @@ Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
           resolve({ stdout, stderr });
         });
       });
-      runningJobs.delete(jobKey);
+      releaseJob(jobKey);
 
       try {
         const data = JSON.parse(stdout);
@@ -264,7 +292,7 @@ Buď konkrétní a věcný. Nezasahuj do jiných projektů.`;
         return res.json({ success: true, text, agent: agent, project: name });
       }
     } catch (e) {
-      runningJobs.delete(jobKey); // safety cleanup
+      releaseJob(jobKey); // safety cleanup
       logError({ err: e, req, extra: { source: "run-agent", agent, project: name, task: task || "generic" } });
       throw new HttpError(500, `Exekuce selhala: ${e.message}`, { expose: false });
     }

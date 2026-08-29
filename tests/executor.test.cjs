@@ -123,6 +123,25 @@ test("routeTaskToAgent: zvládá diakritiku (Bug F)", () => {
   assert.strictEqual(routeTaskToAgent("Přehled projektů"), "spine");
 });
 
+test("routeTaskToAgent: planner režim (Roadmap Planner)", () => {
+  // Archivist — strategický audit
+  assert.strictEqual(routeTaskToAgent("planner audit pro projekt X"), "archivist");
+  assert.strictEqual(routeTaskToAgent("strategicky audit stavu aplikace"), "archivist");
+  assert.strictEqual(routeTaskToAgent("zmapuj stav projektu"), "archivist");
+  // Strategist — plánování roadmapy
+  assert.strictEqual(routeTaskToAgent("planner roadmap pro projekt X"), "strategist");
+  assert.strictEqual(routeTaskToAgent("navrhni roadmapu pro projekt Y"), "strategist");
+  assert.strictEqual(routeTaskToAgent("strategicke planovani roadmapy"), "strategist");
+});
+
+test("routeTaskToAgent: stávající funkcionalita se nezlomila", () => {
+  assert.strictEqual(routeTaskToAgent("implementovat api endpoint"), "builder");
+  assert.strictEqual(routeTaskToAgent("audit readme projektu"), "archivist");
+  assert.strictEqual(routeTaskToAgent("vytvor pitch pro klienta"), "strategist");
+  assert.strictEqual(routeTaskToAgent("najdi nove leady"), "scout");
+  assert.strictEqual(routeTaskToAgent("kontrola stavu systemu"), "spine");
+});
+
 test("routeTaskToAgent: fallback na archivist", () => {
   assert.strictEqual(routeTaskToAgent("Nějaký random task"), "archivist");
   assert.strictEqual(routeTaskToAgent(""), "archivist");

@@ -195,7 +195,7 @@ function runAgentExe(agentName, callback) {
  */
 function runAgentStream(agentName, handlers = {}) {
   const task = AGENT_TASKS[agentName];
-  const { onStdout, onStderr, onError, onDone } = handlers;
+  const { onStdout, onStderr, onError, onDone, taskText, projectName } = handlers;
   let finished = false;
 
   if (!task) {
@@ -204,7 +204,17 @@ function runAgentStream(agentName, handlers = {}) {
     return { kill() {} };
   }
 
-  const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", task.prompt];
+  // Pokud je zadán taskText (planner režim), zabal agentův prompt do kontextu projektu.
+  // Jinak použij čistý agentův prompt (stávající chování).
+  const prompt = taskText
+    ? `Jsi ${task.name} — Sovereign OS. ${projectName ? `Pracuješ na projektu "${projectName}".` : ""}
+
+ÚKOL: ${taskText}
+
+${task.prompt}`
+    : task.prompt;
+
+  const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", config.EXEC_MODEL, "-m", prompt];
   const child = spawn("openclaw", args, {
     timeout: 300000,
     killSignal: "SIGKILL",

@@ -56,9 +56,33 @@ function RoadmapDetail({ project, data, state, onBack }) {
   const [plannerRunning, setPlannerRunning] = useState(false);
 
   // Spustí planner pipeline: Archivist (audit) → Strategist (roadmapa)
+  const [plannerLog, setPlannerLog] = useState([]); // živej SSE log
+  const [plannerStream, setPlannerStream] = useState(null);
+
+  const appendLog = (line) => {
+    setPlannerLog((prev) => [...prev.slice(-19), line]); // posledních 20 řádků
+  };
+
   const runPlanner = async () => {
     setPlannerRunning(true);
+    setPlannerLog([]);
     setPlanner({ phase: "audit", running: true, result: null });
+
+    // SSE stream pro živý průběh (archivist audit)
+    const es = new EventSource(`${API}/api/agents/${encodeURIComponent("archivist")}/stream?task=${encodeURIComponent("planner audit")}&project=${encodeURIComponent(project)}`);
+    setPlannerStream(es);
+    es.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.type === "stdout" || d.type === "stderr") {
+          appendLog(d.chunk);
+        } else if (d.type === "done" || d.type === "error") {
+          if (d.text) appendLog(d.text);
+        }
+      } catch {}
+    };
+    es.onerror = () => { es.close(); setPlannerStream(null); };
+
     try {
       // Fáze 1: Archivist — strategický audit (zapíše state.md)
       const res1 = await fetch(`${API}/api/projects/${encodeURIComponent(project)}/run-agent`, {
@@ -68,9 +92,25 @@ function RoadmapDetail({ project, data, state, onBack }) {
       });
       const d1 = await res1.json();
       if (!res1.ok) throw new Error(d1.error || "Audit selhal");
+      // Zavřít archivist stream
+      if (es) { es.close(); setPlannerStream(null); }
 
       // Fáze 2: Strategist — strategické plánování (zapíše ROADMAP.md)
       setPlanner({ phase: "roadmap", running: true, result: null });
+      // Nový SSE stream pro strategist roadmap
+      const es2 = new EventSource(`${API}/api/agents/${encodeURIComponent("strategist")}/stream?task=${encodeURIComponent("planner roadmap")}&project=${encodeURIComponent(project)}`);
+      setPlannerStream(es2);
+      es2.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === "stdout" || d.type === "stderr") {
+            appendLog(d.chunk);
+          } else if (d.type === "done" || d.type === "error") {
+            if (d.text) appendLog(d.text);
+          }
+        } catch {}
+      };
+      es2.onerror = () => { es2.close(); setPlannerStream(null); };
       const res2 = await fetch(`${API}/api/projects/${encodeURIComponent(project)}/run-agent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-auth-token": import.meta.env.VITE_AUTH_TOKEN },
@@ -81,6 +121,7 @@ function RoadmapDetail({ project, data, state, onBack }) {
 
       setPlanner({ phase: "done", running: false, result: { success: true, text: "Roadmapa navržena. Obnov se pro zobrazení." } });
     } catch (e) {
+      if (plannerStream) { plannerStream.close(); setPlannerStream(null); }
       setPlanner({ phase: "error", running: false, result: { success: false, text: e.message } });
     } finally {
       setPlannerRunning(false);
@@ -116,11 +157,21 @@ function RoadmapDetail({ project, data, state, onBack }) {
             ? "bg-[rgba(232,93,93,0.1)] text-[#e85d5d] border-[rgba(232,93,93,0.3)]"
             : "bg-[rgba(200,155,60,0.08)] text-[#C89B3C] border-[rgba(200,155,60,0.3)]"
         }`}>
-          {planner.running
-            ? (planner.phase === "audit"
-                ? "🔍 Archivist audituje stav projektu (zapisuje state.md)..."
-                : "🧠 Strategist navrhuje roadmapu (zapisuje ROADMAP.md)...")
-            : planner.result?.text}
+          <div className="flex items-center gap-2">
+            {planner.running && <span className="animate-pulse">●</span>}
+            <span>
+              {planner.running
+                ? (planner.phase === "audit"
+                    ? "🔍 Archivist audituje stav projektu (zapisuje state.md)..."
+                    : "🧠 Strategist navrhuje roadmapu (zapisuje ROADMAP.md)...")
+                : planner.result?.text}
+            </span>
+          </div>
+          {planner.running && plannerLog.length > 0 && (
+            <pre className="mt-2 p-2 bg-[#0a0a0a] border border-[#232323] rounded text-[10px] text-[#9d9d9d] font-mono max-h-32 overflow-y-auto whitespace-pre-wrap">
+              {plannerLog.join("")}
+            </pre>
+          )}
         </div>
       )}
 
