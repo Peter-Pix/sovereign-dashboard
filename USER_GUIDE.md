@@ -1,6 +1,6 @@
-# 🎛️ Sovereign Dashboard — Kompletní uživatelská příručka
+# 🎛️ Sovereign Command — Kompletní uživatelská příručka
 
-> **Sovereign Command Center** — centrální nervový systém pro Sovereign OS.
+> **Sovereign Command** — centrální nervový systém pro Sovereign OS.
 > Dark, minimalistický operační dashboard, který nahrazuje roztroušené terminálové kontroly jediným command centerem.
 
 Tato příručka tě provede vším — od prvního spuštění přes každou záložku až po pokročilé workflow a řešení problémů. Je psaná prakticky: co kliknout, co očekávat, a jak z každé funkce dostat maximum.
@@ -9,7 +9,7 @@ Tato příručka tě provede vším — od prvního spuštění přes každou z�
 
 ## 📖 Obsah
 
-1. [Co je Sovereign Dashboard](#-co-je-sovereign-dashboard)
+1. [Co je Sovereign Command](#-co-je-sovereign-dashboard)
 2. [Rychlý start](#-rychlý-start)
 3. [Záložky UI — kompletní průvodce](#-záložky-ui--kompletní-průvodce)
 4. [Autonomní exekuce tasků](#-autonomní-exekuce-tasků)
@@ -26,9 +26,9 @@ Tato příručka tě provede vším — od prvního spuštění přes každou z�
 
 ---
 
-## 🚀 Co je Sovereign Dashboard
+## 🚀 Co je Sovereign Command
 
-Sovereign Dashboard je **real-time operační dashboard** pro správu lokálních Git projektů, agentní pipeline, logů, Paparazzi captures, roadmap a **autonomní exekuce tasků**. Uzavírá kruh autonomního systému:
+Sovereign Command je **real-time operační dashboard** pro správu lokálních Git projektů, agentní pipeline, logů, Paparazzi captures, roadmap a **autonomní exekuce tasků**. Uzavírá kruh autonomního systému:
 
 ```
 ROADMAP.md (task [ ])  →  Executor vybere agenta  →  Agent dokončí task  →  [x] odškrtnuto
@@ -108,85 +108,49 @@ curl http://localhost:8891/health
 
 ## 🗂️ Záložky UI — kompletní průvodce
 
-Dashboard má **7 záložek** v horní navigaci. Tady je, co každá dělá a jak ji používat.
+Dashboard má **4 základní záložky** v horní navigaci, které tvoří centrum řízení:
 
-### 1. Pulse — přehled projektů
+### 1. Projekty — centrum řízení a monitoring
 
-**Co to je:** Všechny Git projekty pod `~/projects` s real-time stavem.
+**Co to je:** Kombinace přehledu projektů (bývalý Pulse) a sběru dat (Paparazzi). Tady vidíš, co se v tvém ekosystému děje.
 
-**Co uvidíš na každé kartě projektu:**
-- **Název projektu** + poslední commit message
-- **Branch** (např. `main`, `feat/...`)
-- **Dirty stav** — má working tree necommitnuté změny?
-- **Health skóre (0–100)** — kombinace aktivity, čistoty, dokumentace, TODO
-- **Aktivita** — 🔥 hot / ⚡ active / 🐢 slow / 💤 idle
-- **Badge "N agent běží"** — pokud na projektu běží exekuce
+**Co uvidíš:**
+- **Grid projektů:** Všechny projekty pod `~/projects` s real-time stavem (commit, branch, dirty stav, health skóre).
+- **Paparazzi Captures:** Screenshoty z iCloudu, které ti umožňují vidět vizuální stav projektů.
+- **Manažer Report:** LLM generovaný report (SSE stream), který sumarizuje stav všech projektů a vyfiltruje zbytečnosti.
+- **Detail projektu:** Kliknutím na projekt se otevře detail s bug tickety a aktivními exekucemi.
 
 **Jak používat:**
-- Klikni na projekt → detail s bug tickety a aktivní exekucí
-- Sleduj health skóre — klesá = projekt stagnuje nebo má dluh
-- Dirty working tree = pozor, build cache může být nekonzistentní
+- Sleduj health skóre — klesá = projekt stagnuje.
+- Používej Manažer Report pro rychlou ranní kontrolu ("co se stalo přes noc").
+- Dirty working tree = pozor, build cache může být nekonzistentní.
 
-### 2. Pipeline — fronta tasků a exekuce
+### 2. Roadmapy — plánování a exekuce
 
-**Co to je:** Fronta tasků, priority a spouštění reálné agentní exekuce.
+**Co to je:** Centrální místo pro plánování tasků (`ROADMAP.md`/`PLAN.md`) a jejich autonomní spouštění.
 
 **Jak používat:**
-- Vidíš tasky čekající na exekuci
-- Můžeš spouštět agenty na konkrétní tasky
-- Sleduješ sloty (kolik agentů běží / kolik je k dispozici)
+- Vyber projekt $ightarrow$ vidíš jeho roadmapu s fázemi a tasky.
+- Tasky s `[ ]` jsou otevřené, `[x]` hotové.
+- Spusť exekuci $ightarrow$ agent vybere task, dokončí ho a odškrtne.
+- **ExecutionPanel:** Sleduješ sloty (`used/total`), frontu a aktivní streamy agentů.
 
 ### 3. Leady — Scout agent
 
 **Co to je:** Leady sesbírané Scout agentem, sektorové statistiky + filtrování.
 
 **Jak používat:**
-- Procházej leady podle sektoru
-- Filtruj podle relevance
-- Exportuj pro další zpracování
+- Procházej leady podle sektoru.
+- Filtruj podle relevance a exportuj pro další zpracování.
 
 ### 4. Agenti — manifesty a logy
 
-**Co to je:** Seznam všech Sovereign agentů s jejich manifesty a logy.
+**Co to je:** Seznam všech Sovereign agentů s jejich definicemi (manifesty) a logy.
 
 **Jak používat:**
-- Prohlížej definice agentů (role, prompt, model)
-- Sleduj logy jednotlivých agentů
-- Spouštěj agenty (přes Action Center nebo stream)
-
-### 5. Paparazzi — data collector
-
-**Co to je:** Sběrač dat o projektech — fotí, čte git stav, měří aktivitu a health, sumarizuje do stručného přehledu.
-
-**Dvě hlavní části:**
-- **Přehled** — data collection + sumarizace (co se děje)
-- **Captures** — screenshoty z iCloudu (`Paparazzi/`)
-
-**Detailněji v [kapitole 7](#-paparazzi--automatické-reporty).**
-
-### 6. Roadmapy — plánování a exekuce
-
-**Co to je:** Roadmapy projektů (čtené z `ROADMAP.md`/`PLAN.md`) + autonomní exekuce tasků. **Hlavní UI pro práci s tasky.**
-
-**Jak používat:**
-- Vyber projekt → vidíš jeho roadmapu s fázemi a tasky
-- Tasky s `[ ]` jsou otevřené, `[x]` hotové
-- Spusť exekuci → agent dokončí task a odškrtne ho
-- Sleduj sloty (`used/total`) a aktivní tasky
-
-**Detailněji v [kapitole 5](#-roadmapy--plánování-a-sledování).**
-
-### 7. Log — operační log
-
-**Co to je:** Milníky, vítězství a zápasy systému.
-
-**Jak používat:**
-- Sleduj historii důležitých událostí
-- Identifikuj vzorce (co funguje, co ne)
-
----
-
-### Pokročilé UI komponenty
+- Prohlížej definice agentů (role, prompt, model).
+- Sleduj logy jednotlivých agentů pro ladění promptů.
+- Spouštěj agenty (přes Action Center nebo stream).
 
 Kromě hlavních záložek má dashboard několik **pokročilých komponent**, které rozšiřují možnosti ovládání:
 
@@ -223,7 +187,7 @@ Vyhledávání a spouštění akcí přes `Cmd+K`. Rychlý přístup k projektů
 
 ## 🤖 Autonomní exekuce tasků
 
-Toto je **srdce Sovereign Dashboardu** — uzavírá kruh: roadmapa → agent → dokončení → odškrtnutí.
+Toto je **srdce Sovereign Commandu** — uzavírá kruh: roadmapa → agent → dokončení → odškrtnutí.
 
 ### Jak to funguje
 
@@ -405,7 +369,7 @@ Z karty projektu (Pulse) můžeš:
 
 ---
 
-## 📸 Paparazzi — automatické reporty
+## 📸 Funkce Paparazzi (integrovány do záložky Projekty)
 
 > Paparazzi není jen foťák. Je to **sběrač dat o projektech** — fotí, čte git stav, měří aktivitu a health, a sumarizuje to do stručného přehledu, kde jsou zbytečnosti vyhozené.
 
@@ -459,7 +423,7 @@ Paparazzi má **Manažer Report** — LLM generovaný report, který se vypisuje
 
 ### Jak používat Paparazzi
 
-1. Otevři **Paparazzi** záložku
+1. Otevři záložku **Projekty**
 2. **Přehled** — data + sumarizace + systém (CPU/RAM/disk gauges)
 3. **Captures** — foto view + filtr
 4. **History** — historie reportů
@@ -850,7 +814,7 @@ Všechny endpointy jsou dostupné přes REST API. Příklad nočního exportu:
 
 ## 🎯 Závěrečné doporučení
 
-Sovereign Dashboard je výkonný nástroj, ale jeho síla je v **kombinaci automatizace a lidského úsudku**:
+Sovereign Command je výkonný nástroj, ale jeho síla je v **kombinaci automatizace a lidského úsudku**:
 
 1. **Začni malým** — jeden projekt, jednoduché roadmapy
 2. **Iteruj** — sleduj, co funguje, co ne, přizpůsobuj
