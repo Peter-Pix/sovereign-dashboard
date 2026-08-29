@@ -51,7 +51,7 @@ function RoadmapCard({ p, onSelect }) {
 }
 
 // ----- Detail roadmapy projektu -----
-function RoadmapDetail({ project, data, state, onBack }) {
+function RoadmapDetail({ project, data, state, onBack, onPlannerDone }) {
   const [planner, setPlanner] = useState(null); // null | {phase, running, result}
   const [plannerRunning, setPlannerRunning] = useState(false);
 
@@ -90,8 +90,11 @@ function RoadmapDetail({ project, data, state, onBack }) {
         headers: { "Content-Type": "application/json", "x-auth-token": import.meta.env.VITE_AUTH_TOKEN },
         body: JSON.stringify({ agent: "archivist", task: "planner audit" }),
       });
-      const d1 = await res1.json();
-      if (!res1.ok) throw new Error(d1.error || "Audit selhal");
+      if (!res1.ok) {
+        let msg = "Audit selhal";
+        try { const e1 = await res1.json(); msg = e1.error || msg; } catch {}
+        throw new Error(`[${res1.status}] ${msg}`);
+      }
       // Zavřít archivist stream
       if (es) { es.close(); setPlannerStream(null); }
 
@@ -116,13 +119,21 @@ function RoadmapDetail({ project, data, state, onBack }) {
         headers: { "Content-Type": "application/json", "x-auth-token": import.meta.env.VITE_AUTH_TOKEN },
         body: JSON.stringify({ agent: "strategist", task: "planner roadmap" }),
       });
-      const d2 = await res2.json();
-      if (!res2.ok) throw new Error(d2.error || "Plánování selhalo");
+      if (!res2.ok) {
+        let msg = "Plánování selhalo";
+        try { const e2 = await res2.json(); msg = e2.error || msg; } catch {}
+        throw new Error(`[${res2.status}] ${msg}`);
+      }
 
-      setPlanner({ phase: "done", running: false, result: { success: true, text: "Roadmapa navržena. Obnov se pro zobrazení." } });
+      // Zavřít strategist stream
+      if (es2) { es2.close(); setPlannerStream(null); }
+
+      // OK — okamžitý refresh roadmapy
+      setPlanner({ phase: "done", running: false, result: { success: true, text: "✅ Roadmapa navržena a rozdělena na malé tasky. Roadmapa byla obnovena." } });
+      if (onPlannerDone) onPlannerDone(); // force refresh hned teď (ne čekat na 2s poll)
     } catch (e) {
       if (plannerStream) { plannerStream.close(); setPlannerStream(null); }
-      setPlanner({ phase: "error", running: false, result: { success: false, text: e.message } });
+      setPlanner({ phase: "error", running: false, result: { success: false, text: `❌ ${e.message}` } });
     } finally {
       setPlannerRunning(false);
     }
@@ -220,17 +231,18 @@ export default function Roadmaps() {
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState("all"); // all | running
 
+  const load = () => {
+    fetch(`${API}/api/roadmaps/state`)
+      .then((r) => r.json())
+      .then((d) => {
+        setData(d);
+        setLoading(false);
+        setError(null);
+      })
+      .catch((e) => setError(e.message));
+  };
+
   useEffect(() => {
-    const load = () => {
-      fetch(`${API}/api/roadmaps/state`)
-        .then((r) => r.json())
-        .then((d) => {
-          setData(d);
-          setLoading(false);
-          setError(null);
-        })
-        .catch((e) => setError(e.message));
-    };
     load();
     const id = setInterval(load, 2000); // one source, jeden poll
     return () => clearInterval(id);
@@ -249,7 +261,7 @@ export default function Roadmaps() {
   // Detail vybraného projektu — najdi ho v one source
   if (selected && data) {
     const proj = data.projects.find((p) => p.project === selected);
-    if (proj) return <RoadmapDetail project={selected} data={proj} state={data} onBack={() => setSelected(null)} />;
+    if (proj) return <RoadmapDetail project={selected} data={proj} state={data} onBack={() => setSelected(null)} onPlannerDone={load} />;
   }
 
   if (projects.length === 0) {
