@@ -5,6 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
+const { randomUUID } = require("crypto");
 const { buildContext } = require("./contextBuilder.cjs");
 const { buildMcpContextSection } = require("./mcpContext.cjs");
 const { selfCorrect } = require("./selfCorrector.cjs");
@@ -323,11 +324,33 @@ function runTaskAgent(agentName, projectName, taskText, callback, model) {
   // MCP sekci načteme async — agenty mají přístup k MCP tools,
   // ale model musí vědět, že existují. Načtení je best-effort (nikdy nefailne).
   const runAgentWithPrompt = (prompt, cb) => {
-    const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", execModel, "-m", prompt];
+    // Unikátní session key pro tento běh — umožní nám na timeoutu zabít i
+    // gateway task (openclaw tasks cancel), ne jen lokální CLI proces.
+    // Bez toho by gateway task pokračoval na pozadí a spálil budget na
+    // "mrtvou" exekuci (tasky trvaly 5-14 min místo 5).
+    const sessionKey = `agent:${config.EXEC_AGENT}:${projectName}:${randomUUID()}`;
+    const args = ["agent", "--agent", config.EXEC_AGENT, "--json", "--model", execModel, "--session-key", sessionKey, "-m", prompt];
     let finished = false;
+
+    // Zabije gateway task (openclaw tasks cancel <sessionKey>), aby timeout
+    // opravdu ukončil exekuci — ne jen lokální proces. Best-effort: pokud
+    // cancel selže, aspoň lokální proces je mrtvý (původní chování).
+    const cancelGatewayTask = () => {
+      execFile("openclaw", ["tasks", "cancel", sessionKey], {
+        timeout: 15000,
+        maxBuffer: 1024 * 1024,
+        env: { ...process.env, FORCE_COLOR: "0" },
+      }, (cancelErr) => {
+        if (cancelErr) {
+          console.warn(`[Executor] Gateway task cancel selhal (${sessionKey}): ${cancelErr.message}`);
+        }
+      });
+    };
+
     const timeout = setTimeout(() => {
       if (finished) return;
       finished = true;
+      cancelGatewayTask(); // zabij i gateway task, ne jen lokální proces
       cb(new Error("Agent exekuce timeout (5 min)"));
     }, LIMITS.AGENT_TIMEOUT_MS);
 
