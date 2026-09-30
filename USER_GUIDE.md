@@ -157,7 +157,7 @@ Kromě hlavních záložek má dashboard několik **pokročilých komponent**, k
 Dropdown pro výběr LLM modelu pro exekuci. Dostupné modely:
 - **MiniMax M3** (`ollama/minimax-m3:cloud`) — komplexní úkoly, větší context
 - **Kimi K2.7 Code** (`ollama/kimi-k2.7-code:cloud`) — code generation
-- **DeepSeek V4 Flash** (`ollama/deepseek-v4-flash:cloud`) — rychlé úkoly, nízká cena
+- **DeepSeek V4 Flash** (`ollama/gemma4:31b-cloud`) — rychlé úkoly, nízká cena
 - **Gemma 4 31B** (`ollama/gemma4:31b-cloud`) — vyvážený výkon
 
 **Tip:** Přepínej model podle typu tasku — rychlé úkoly na DeepSeek, komplexní na MiniMax/Kimi.
@@ -517,7 +517,7 @@ Paparazzi má **Manažer Report** — LLM generovaný report, který se vypisuje
 | `EXEC_MEMORY_GUARD` | Aktivovat paměťový guard | `1` |
 | `EXEC_MIN_FREE_MB` | Rezervovaná volná RAM (MB) | `1500` |
 | `EXEC_AGENT_MEM_MB` | Odhad paměti na 1 agenta (MB) | `250` |
-| `SOVEREIGN_EXEC_MODEL` | Model pro exekuci | `ollama/deepseek-v4-flash:cloud` |
+| `SOVEREIGN_EXEC_MODEL` | Model pro exekuci | `ollama/gemma4:31b-cloud` |
 | `SOVEREIGN_SKIP_PROJECTS` | Projekty vyřazené z exekuce | — |
 
 ### Tuning pro 8GB mašinu
@@ -741,7 +741,7 @@ echo "Fronta je prázdná!"
 ```
 
 ### Tip 4: Model switching pro různé typy tasků
-- **Rychlé úkoly** (analýza, dokumentace): `ollama/deepseek-v4-flash:cloud`
+- **Rychlé úkoly** (analýza, dokumentace): `ollama/gemma4:31b-cloud`
 - **Komplexní úkoly** (refaktor, algoritmy): `ollama/minimax-m3:cloud`
 - **Kreativní úkoly** (psaní, brainstorming): `ollama/kimi-k2.7-code:cloud`
 
@@ -846,7 +846,7 @@ curl -X POST "http://localhost:8891/api/executor/reset" \
 ## ❓ FAQ
 
 ### Kolik stojí běh dashboardu?
-Pouze za Ollama Cloud API volání. `deepseek-v4-flash:cloud` ~$0.07-0.15/1M tokenů, `minimax-m3:cloud` ~$0.15-0.30/1M. Průměrný task ~500-2000 tokenů → ~$0.000035-0.0006/task.
+Pouze za Ollama Cloud API volání. `gemma4:31b-cloud` ~$0.07-0.15/1M tokenů, `minimax-m3:cloud` ~$0.15-0.30/1M. Průměrný task ~500-2000 tokenů → ~$0.000035-0.0006/task.
 
 ### Proč neběží lokální modely na 8GB mašině?
 Lokální modely nad ~3GB vyžadují obrovskou RAM. Na 8GB mašině → okamžitý swap death. Používej výhradně **Ollama Cloud API**.

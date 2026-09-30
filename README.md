@@ -63,7 +63,7 @@ cp .env.example .env
 | `EXEC_MEMORY_GUARD` | Paměťový guard proti OOM (1=aktivní, 0=vypnutý) | `1` |
 | `EXEC_MIN_FREE_MB` | Min volná RAM pro spuštění dalšího agenta (MB) | `1500` |
 | `EXEC_AGENT_MEM_MB` | Odhad paměti na 1 agenta (MB) | `250` |
-| `SOVEREIGN_EXEC_MODEL` | Model pro exekuci | `ollama/deepseek-v4-flash:cloud` |
+| `SOVEREIGN_EXEC_MODEL` | Model pro exekuci | `ollama/gemma4:31b-cloud` |
 | `SOVEREIGN_SKIP_PROJECTS` | Projekty vyřazené z exekuce (čárkou) | — |
 
 ## Architektura

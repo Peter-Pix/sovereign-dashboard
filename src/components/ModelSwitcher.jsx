@@ -5,25 +5,21 @@ import { API, authHeaders } from "../config";
 const AVAILABLE_MODELS = [
   { id: "ollama/minimax-m3:cloud", label: "MiniMax M3", group: "exec" },
   { id: "ollama/kimi-k2.7-code:cloud", label: "Kimi K2.7 Code", group: "exec" },
-  { id: "ollama/deepseek-v4-flash:cloud", label: "DeepSeek V4 Flash", group: "exec" },
   { id: "ollama/gemma4:31b-cloud", label: "Gemma 4 31B", group: "exec" },
   { id: "minimax-m3:cloud", label: "MiniMax M3 (ollama)", group: "ollama" },
   { id: "kimi-k2.7-code:cloud", label: "Kimi K2.7 (ollama)", group: "ollama" },
-  { id: "deepseek-v4-flash:cloud", label: "DeepSeek V4 (ollama)", group: "ollama" },
 ];
 
 // Zjednodušený seznam — jen ty, co dávají smysl
 const EXEC_MODELS = [
   "ollama/minimax-m3:cloud",
   "ollama/kimi-k2.7-code:cloud",
-  "ollama/deepseek-v4-flash:cloud",
   "ollama/gemma4:31b-cloud",
 ];
 
 const OLLAMA_MODELS = [
   "minimax-m3:cloud",
   "kimi-k2.7-code:cloud",
-  "deepseek-v4-flash:cloud",
 ];
 
 function ModelSwitcher() {
